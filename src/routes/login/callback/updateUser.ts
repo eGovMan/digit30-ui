@@ -4,9 +4,7 @@ import { ObjectId } from "mongodb";
 import { DEFAULT_SETTINGS } from "$lib/types/Settings";
 import { z } from "zod";
 import type { UserinfoResponse } from "openid-client";
-import { error, type Cookies } from "@sveltejs/kit";
-import crypto from "crypto";
-import { sha256 } from "$lib/utils/sha256";
+import { type Cookies } from "@sveltejs/kit";
 import { addWeeks } from "date-fns";
 import { OIDConfig } from "$lib/server/auth";
 import { env } from "$env/dynamic/private";
@@ -18,12 +16,11 @@ export async function updateUser(params: {
 	cookies: Cookies;
 	userAgent?: string;
 	ip?: string;
+	sessionId: string; // Add sessionId parameter
 }) {
-	const { userData, locals, cookies, userAgent, ip } = params;
+	const { userData, locals, cookies, userAgent, ip, sessionId } = params;
 
-	// Microsoft Entra v1 tokens do not provide preferred_username, instead the username is provided in the upn
-	// claim. See https://learn.microsoft.com/en-us/entra/identity-platform/access-token-claims-reference
-	if (!userData.preferred_username && userData.upn) {
+	if (userData.upn && !userData.preferred_username) {
 		userData.preferred_username = userData.upn as string;
 	}
 
@@ -76,9 +73,6 @@ export async function updateUser(params: {
 		}>;
 	} & Record<string, string>;
 
-	// Dynamically access user data based on NAME_CLAIM from environment
-	// This approach allows us to adapt to different OIDC providers flexibly.
-
 	logger.info(
 		{
 			login_username: username,
@@ -88,7 +82,7 @@ export async function updateUser(params: {
 		},
 		"user login"
 	);
-	// if using huggingface as auth provider, check orgs for earl access and amin rights
+
 	const isAdmin = (env.HF_ORG_ADMIN && orgs?.some((org) => org.sub === env.HF_ORG_ADMIN)) || false;
 	const isEarlyAccess =
 		(env.HF_ORG_EARLY_ACCESS && orgs?.some((org) => org.sub === env.HF_ORG_EARLY_ACCESS)) || false;
@@ -102,29 +96,18 @@ export async function updateUser(params: {
 		`Updating user ${hfUserId}`
 	);
 
-	// check if user already exists
 	const existingUser = await collections.users.findOne({ hfUserId });
 	let userId = existingUser?._id;
 
-	// update session cookie on login
 	const previousSessionId = locals.sessionId;
-	const secretSessionId = crypto.randomUUID();
-	const sessionId = await sha256(secretSessionId);
-
-	if (await collections.sessions.findOne({ sessionId })) {
-		error(500, "Session ID collision");
-	}
-
-	locals.sessionId = sessionId;
+	locals.sessionId = sessionId; // Use the passed sessionId
 
 	if (existingUser) {
-		// update existing user if any
 		await collections.users.updateOne(
 			{ _id: existingUser._id },
 			{ $set: { username, name, avatarUrl, isAdmin, isEarlyAccess } }
 		);
 
-		// remove previous session if it exists and add new one
 		await collections.sessions.deleteOne({ sessionId: previousSessionId });
 		await collections.sessions.insertOne({
 			_id: new ObjectId(),
@@ -137,7 +120,6 @@ export async function updateUser(params: {
 			expiresAt: addWeeks(new Date(), 2),
 		});
 	} else {
-		// user doesn't exist yet, create a new one
 		const { insertedId } = await collections.users.insertOne({
 			_id: new ObjectId(),
 			createdAt: new Date(),
@@ -164,7 +146,6 @@ export async function updateUser(params: {
 			expiresAt: addWeeks(new Date(), 2),
 		});
 
-		// move pre-existing settings to new user
 		const { matchedCount } = await collections.settings.updateOne(
 			{ sessionId: previousSessionId },
 			{
@@ -174,7 +155,6 @@ export async function updateUser(params: {
 		);
 
 		if (!matchedCount) {
-			// if no settings found for user, create default settings
 			await collections.settings.insertOne({
 				userId,
 				ethicsModalAcceptedAt: new Date(),
@@ -185,10 +165,9 @@ export async function updateUser(params: {
 		}
 	}
 
-	// refresh session cookie
-	refreshSessionCookie(cookies, secretSessionId);
+	// Use the original sessionId for the cookie, not a new hashed one
+	refreshSessionCookie(cookies, sessionId);
 
-	// migrate pre-existing conversations
 	await collections.conversations.updateMany(
 		{ sessionId: previousSessionId },
 		{

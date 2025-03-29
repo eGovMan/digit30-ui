@@ -13,6 +13,7 @@ import { MetricsServer } from "$lib/server/metrics";
 import type { ToolFront, ToolInputFile } from "$lib/types/Tool";
 import { ReviewStatus } from "$lib/types/Review";
 import { base } from "$app/paths";
+// import { findUser } from '$lib/server/auth';
 
 export const load: LayoutServerLoad = async ({ locals, depends, fetch }) => {
 	depends(UrlDependency.ConversationList);

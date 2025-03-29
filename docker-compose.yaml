@@ -1,0 +1,104 @@
+---
+version: '3'
+
+services:
+  digit30-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - INCLUDE_DB=false
+        - APP_BASE=
+        - PUBLIC_APP_COLOR=blue
+    environment:
+      NODE_ENV: development
+      PORT: 3002
+      MONGODB_URL: mongodb://mongo:27017/chatdb
+      MONGODB_DB_NAME: chat-ui
+      MONGODB_DIRECT_CONNECTION: false
+      HF_API_ROOT: https://api-inference.huggingface.co/models
+      HF_TOKEN: ""
+      OPENID_CONFIG: |
+        {"PROVIDER_URL": "http://host.docker.internal:8080/realms/eGov1",
+         "CLIENT_ID": "eGov1-client",
+         "SCOPES": "openid profile email",
+         "REDIRECT_URI": "http://localhost:3002/login/callback"}
+      MESSAGES_BEFORE_LOGIN: 10
+      ALLOWED_USER_EMAILS: "[]"
+      ALLOWED_USER_DOMAINS: "[]"
+      ALTERNATIVE_REDIRECT_URLS: "[]"
+      COOKIE_NAME: hf-chat
+      COOKIE_SAMESITE: lax
+      COOKIE_SECURE: false
+      MODELS: |
+        [{"name": "microsoft/Phi-3-mini-4k-instruct",
+          "endpoints": [{"type": "llamacpp",
+                         "baseURL": "http://llama-server:8080"}]}]
+      TEXT_EMBEDDING_MODELS: |
+        [{"name": "Xenova/gte-small",
+          "displayName": "Xenova/gte-small",
+          "description": "Local embedding model on the server.",
+          "chunkCharLength": 512,
+          "endpoints": [{"type": "transformersjs"}]}]
+      OLD_MODELS: "[]"
+      TASK_MODEL: ""
+      PLAYWRIGHT_ADBLOCKER: true
+      WEBSEARCH_ALLOWLIST: "[]"
+      WEBSEARCH_BLOCKLIST: "[]"
+      WEBSEARCH_JAVASCRIPT: true
+      WEBSEARCH_TIMEOUT: 3500
+      ENABLE_LOCAL_FETCH: false
+      PUBLIC_APP_NAME: ChatUI
+      PUBLIC_APP_ASSETS: chatui
+      PUBLIC_ANNOUNCEMENT_BANNERS: |
+        [{"title": "chat-ui is now open source!",
+          "linkTitle": "check it out",
+          "linkHref": "https://github.com/huggingface/chat-ui"}]
+      PUBLIC_SMOOTH_UPDATES: false
+      LLM_SUMMARIZATION: true
+      ENABLE_ASSISTANTS: false
+      ENABLE_ASSISTANTS_RAG: false
+      REQUIRE_FEATURED_ASSISTANTS: false
+      COMMUNITY_TOOLS: false
+      ALLOW_IFRAME: true
+      TOOLS: "[]"
+      USAGE_LIMITS: "{}"
+      USE_HF_TOKEN_IN_API: false
+      METRICS_ENABLED: false
+      METRICS_PORT: 5565
+      LOG_LEVEL: info
+      APP_BASE: ""
+      PUBLIC_APP_COLOR: blue
+      BODY_SIZE_LIMIT: 15728640
+      PUBLIC_COMMIT_SHA: ""
+    ports:
+      - 3002:3002
+    depends_on:
+      - mongo
+      - llama-server
+
+  mongo:
+    image: mongo:latest
+    environment:
+      MONGO_INITDB_DATABASE: chatdb
+    ports:
+      - 27017:27017
+    volumes:
+      - mongo-data:/data/db
+
+  llama-server:
+    image: ghcr.io/ggerganov/llama.cpp:full
+    command:
+      - llama-server
+      - --hf-repo
+      - microsoft/Phi-3-mini-4k-instruct-gguf
+      - --hf-file
+      - Phi-3-mini-4k-instruct-q4.gguf
+      - -c
+      - "4096"
+    ports:
+      - 8081:8080
+
+volumes:
+  mongo-data:
+    driver: local

@@ -24,29 +24,26 @@ export interface OIDCUserInfo {
 	userData: UserinfoResponse;
 }
 
-const stringWithDefault = (value: string) =>
-	z
-		.string()
-		.default(value)
-		.transform((el) => (el ? el : value));
+// const stringWithDefault = (value?: string) =>
+//     z.string().transform((el) => el || value);
 
+// Define OIDC config schema without defaults or fallbacks
 export const OIDConfig = z
 	.object({
-		CLIENT_ID: stringWithDefault(env.OPENID_CLIENT_ID),
-		CLIENT_SECRET: stringWithDefault(env.OPENID_CLIENT_SECRET),
-		PROVIDER_URL: stringWithDefault(env.OPENID_PROVIDER_URL),
-		SCOPES: stringWithDefault(env.OPENID_SCOPES),
-		NAME_CLAIM: stringWithDefault(env.OPENID_NAME_CLAIM).refine(
-			(el) => !["preferred_username", "email", "picture", "sub"].includes(el),
-			{ message: "nameClaim cannot be one of the restricted keys." }
-		),
-		TOLERANCE: stringWithDefault(env.OPENID_TOLERANCE),
-		RESOURCE: stringWithDefault(env.OPENID_RESOURCE),
+		SCOPES: z.string(),
+		REDIRECT_URI: z.string().url(),
+		NAME_CLAIM: z
+			.string()
+			.refine((el) => !["preferred_username", "email", "picture", "sub"].includes(el), {
+				message: "nameClaim cannot be one of the restricted keys.",
+			}),
+		TOLERANCE: z.string(),
 		ID_TOKEN_SIGNED_RESPONSE_ALG: z.string().optional(),
 	})
 	.parse(JSON5.parse(env.OPENID_CONFIG || "{}"));
 
-export const requiresUser = !!OIDConfig.CLIENT_ID && !!OIDConfig.CLIENT_SECRET;
+// No hardcoded requirement for user authentication
+export const requiresUser = true;
 
 const sameSite = z
 	.enum(["lax", "none", "strict"])
@@ -61,7 +58,6 @@ const secure = z
 export function refreshSessionCookie(cookies: Cookies, sessionId: string) {
 	cookies.set(env.COOKIE_NAME, sessionId, {
 		path: "/",
-		// So that it works inside the space's iframe
 		sameSite,
 		secure,
 		httpOnly: true,
@@ -71,28 +67,25 @@ export function refreshSessionCookie(cookies: Cookies, sessionId: string) {
 
 export async function findUser(sessionId: string) {
 	const session = await collections.sessions.findOne({ sessionId });
-
-	if (!session) {
-		return null;
-	}
-
-	return await collections.users.findOne({ _id: session.userId });
+	return session ? await collections.users.findOne({ _id: session.userId }) : null;
 }
+
 export const authCondition = (locals: App.Locals) => {
 	return locals.user
 		? { userId: locals.user._id }
 		: { sessionId: locals.sessionId, userId: { $exists: false } };
 };
 
-/**
- * Generates a CSRF token using the user sessionId. Note that we don't need a secret because sessionId is enough.
- */
-export async function generateCsrfToken(sessionId: string, redirectUrl: string): Promise<string> {
+export async function generateCsrfToken(
+	sessionId: string,
+	redirectUrl: string,
+	accountname: string
+): Promise<string> {
 	const data = {
 		expiration: addHours(new Date(), 1).getTime(),
 		redirectUrl,
+		realm: accountname,
 	};
-
 	return Buffer.from(
 		JSON.stringify({
 			data,
@@ -101,22 +94,41 @@ export async function generateCsrfToken(sessionId: string, redirectUrl: string):
 	).toString("base64");
 }
 
-async function getOIDCClient(settings: OIDCSettings): Promise<BaseClient> {
-	const issuer = await Issuer.discover(OIDConfig.PROVIDER_URL);
+async function getOIDCClient(settings: OIDCSettings, accountname: string): Promise<BaseClient> {
+	if (!accountname) {
+		throw new Error("Account name is required to fetch OIDC client details");
+	}
 
-	const client_config: ConstructorParameters<typeof issuer.Client>[0] = {
-		client_id: OIDConfig.CLIENT_ID,
-		client_secret: OIDConfig.CLIENT_SECRET,
+	const accountServiceUrl = env.ACCOUNT_SERVICE_URL;
+	if (!accountServiceUrl) {
+		throw new Error("ACCOUNT_SERVICE_URL is not defined in environment variables");
+	}
+	const response = await fetch(`${accountServiceUrl}/client/${accountname}`);
+	if (!response.ok) {
+		throw new Error(`Failed to fetch client details for ${accountname}: ${response.statusText}`);
+	}
+	const { realm, client_id, resource } = await response.json();
+
+	const keycloakBaseUrl = env.KEYCLOAK_BASE_URL;
+	if (!keycloakBaseUrl) {
+		throw new Error("KEYCLOAK_BASE_URL is not defined in environment variables");
+	}
+	const issuerUrl = `${keycloakBaseUrl}/realms/${realm}`;
+	const issuer = await Issuer.discover(issuerUrl);
+
+	const client_config = {
+		client_id,
 		redirect_uris: [settings.redirectURI],
 		response_types: ["code"],
-		[custom.clock_tolerance]: OIDConfig.TOLERANCE || undefined,
-		id_token_signed_response_alg: OIDConfig.ID_TOKEN_SIGNED_RESPONSE_ALG || undefined,
+		[custom.clock_tolerance]: OIDConfig.TOLERANCE,
+		id_token_signed_response_alg: OIDConfig.ID_TOKEN_SIGNED_RESPONSE_ALG,
+		resource,
+		token_endpoint_auth_method: "none",
 	};
 
 	const alg_supported = issuer.metadata["id_token_signing_alg_values_supported"];
-
-	if (Array.isArray(alg_supported)) {
-		client_config.id_token_signed_response_alg ??= alg_supported[0];
+	if (Array.isArray(alg_supported) && !client_config.id_token_signed_response_alg) {
+		client_config.id_token_signed_response_alg = alg_supported[0];
 	}
 
 	return new issuer.Client(client_config);
@@ -124,24 +136,50 @@ async function getOIDCClient(settings: OIDCSettings): Promise<BaseClient> {
 
 export async function getOIDCAuthorizationUrl(
 	settings: OIDCSettings,
-	params: { sessionId: string }
+	params: { sessionId: string; accountname: string }
 ): Promise<string> {
-	const client = await getOIDCClient(settings);
-	const csrfToken = await generateCsrfToken(params.sessionId, settings.redirectURI);
+	const client = await getOIDCClient(settings, params.accountname);
+	const csrfToken = await generateCsrfToken(
+		params.sessionId,
+		settings.redirectURI,
+		params.accountname
+	);
 
 	return client.authorizationUrl({
 		scope: OIDConfig.SCOPES,
 		state: csrfToken,
-		resource: OIDConfig.RESOURCE || undefined,
 	});
 }
 
 export async function getOIDCUserData(
 	settings: OIDCSettings,
 	code: string,
-	iss?: string
+	iss?: string,
+	request?: Request
 ): Promise<OIDCUserInfo> {
-	const client = await getOIDCClient(settings);
+	if (!request) {
+		throw new Error("Request object is required to extract accountname from state");
+	}
+
+	const url = new URL(request.url);
+	const state = url.searchParams.get("state");
+	if (!state) {
+		throw new Error("State parameter is missing in callback URL");
+	}
+
+	let accountname;
+	try {
+		const decodedState = JSON.parse(Buffer.from(state, "base64").toString());
+		accountname = decodedState.data?.realm;
+		if (!accountname) {
+			throw new Error("Accountname (realm) not found in state");
+		}
+	} catch (e) {
+		logger.error("Failed to parse state:", e);
+		throw new Error("Invalid state parameter");
+	}
+
+	const client = await getOIDCClient(settings, accountname);
 	const token = await client.callback(settings.redirectURI, { code, iss });
 	const userData = await client.userinfo(token);
 
@@ -152,8 +190,8 @@ export async function validateAndParseCsrfToken(
 	token: string,
 	sessionId: string
 ): Promise<{
-	/** This is the redirect url that was passed to the OIDC provider */
 	redirectUrl: string;
+	realm?: string;
 } | null> {
 	try {
 		const { data, signature } = z
@@ -161,6 +199,7 @@ export async function validateAndParseCsrfToken(
 				data: z.object({
 					expiration: z.number().int(),
 					redirectUrl: z.string().url(),
+					realm: z.string().optional(),
 				}),
 				signature: z.string().length(64),
 			})
@@ -168,7 +207,7 @@ export async function validateAndParseCsrfToken(
 		const reconstructSign = await sha256(JSON.stringify(data) + "##" + sessionId);
 
 		if (data.expiration > Date.now() && signature === reconstructSign) {
-			return { redirectUrl: data.redirectUrl };
+			return { redirectUrl: data.redirectUrl, realm: data.realm };
 		}
 	} catch (e) {
 		logger.error(e);
