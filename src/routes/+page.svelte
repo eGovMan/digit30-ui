@@ -152,7 +152,6 @@
     async function createConversation(message: string) {
         try {
             loading = true;
-
             const validModels = data.models.map((model) => model.id);
             let model;
             if (validModels.includes($settings.activeModel)) {
@@ -210,7 +209,7 @@
 
 {#if isAuthenticated}
     <ChatWindow
-        onmessage={(ev) => createConversation(ev.detail)}
+        on:message={(ev) => createConversation(ev.detail)}
         {loading}
         assistant={data.assistant}
         {currentModel}
@@ -243,7 +242,7 @@
     </div>
 {:else}
     <ChatWindow
-        onmessage={(ev) => createConversation(ev.detail)}
+        on:message={(ev) => createConversation(ev.detail)}
         {loading}
         assistant={data.assistant}
         {currentModel}

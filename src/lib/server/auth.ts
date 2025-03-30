@@ -12,9 +12,9 @@ import { z } from "zod";
 import { dev } from "$app/environment";
 import type { Cookies } from "@sveltejs/kit";
 import { collections } from "$lib/server/database";
-import JSON5 from "json5";
 import { logger } from "$lib/server/logger";
 
+// Define interfaces for OIDC settings and user info
 export interface OIDCSettings {
 	redirectURI: string;
 }
@@ -24,27 +24,10 @@ export interface OIDCUserInfo {
 	userData: UserinfoResponse;
 }
 
-// const stringWithDefault = (value?: string) =>
-//     z.string().transform((el) => el || value);
-
-// Define OIDC config schema without defaults or fallbacks
-export const OIDConfig = z
-	.object({
-		SCOPES: z.string(),
-		REDIRECT_URI: z.string().url(),
-		NAME_CLAIM: z
-			.string()
-			.refine((el) => !["preferred_username", "email", "picture", "sub"].includes(el), {
-				message: "nameClaim cannot be one of the restricted keys.",
-			}),
-		TOLERANCE: z.string(),
-		ID_TOKEN_SIGNED_RESPONSE_ALG: z.string().optional(),
-	})
-	.parse(JSON5.parse(env.OPENID_CONFIG || "{}"));
-
 // No hardcoded requirement for user authentication
 export const requiresUser = true;
 
+// Cookie settings
 const sameSite = z
 	.enum(["lax", "none", "strict"])
 	.default(dev || env.ALLOW_INSECURE_COOKIES === "true" ? "lax" : "none")
@@ -56,7 +39,7 @@ const secure = z
 	.parse(env.COOKIE_SECURE === "" ? undefined : env.COOKIE_SECURE === "true");
 
 export function refreshSessionCookie(cookies: Cookies, sessionId: string) {
-	cookies.set(env.COOKIE_NAME, sessionId, {
+	cookies.set(env.COOKIE_NAME || "hf-chat", sessionId, {
 		path: "/",
 		sameSite,
 		secure,
@@ -100,9 +83,6 @@ async function getOIDCClient(settings: OIDCSettings, accountname: string): Promi
 	}
 
 	const kongProxyUrl = env.KONG_PROXY_URL || "http://localhost:8000";
-	if (!kongProxyUrl) {
-		throw new Error("KONG_PROXY_URL is not defined in environment variables");
-	}
 	const accountServiceRoute = "/account-service";
 	const accountServiceUrl = `${kongProxyUrl}${accountServiceRoute}`;
 
@@ -110,22 +90,31 @@ async function getOIDCClient(settings: OIDCSettings, accountname: string): Promi
 	if (!response.ok) {
 		throw new Error(`Failed to fetch client details for ${accountname}: ${response.statusText}`);
 	}
-	const { realm, client_id, resource } = await response.json();
+	const config = await response.json();
 
-	const keycloakBaseUrl = env.KEYCLOAK_BASE_URL;
-	if (!keycloakBaseUrl) {
-		throw new Error("KEYCLOAK_BASE_URL is not defined in environment variables");
-	}
-	const issuerUrl = `${keycloakBaseUrl}/realms/${realm}`;
+	// Extract OIDC configuration from the account service response
+	const oidcConfig = z
+		.object({
+			authUrl: z.string(),
+			clientId: z.string(),
+			resource: z.string(),
+			scopes: z.string(),
+			redirectUri: z.string().url(),
+			nameClaim: z.string(),
+			tolerance: z.string(),
+		})
+		.parse(config.oidc);
+
+	const issuerUrl = oidcConfig.authUrl.split("?")[0].replace(/\/auth$/, ""); // Extract base URL for discovery
 	const issuer = await Issuer.discover(issuerUrl);
 
 	const client_config = {
-		client_id,
+		client_id: oidcConfig.clientId,
 		redirect_uris: [settings.redirectURI],
 		response_types: ["code"],
-		[custom.clock_tolerance]: OIDConfig.TOLERANCE,
-		id_token_signed_response_alg: OIDConfig.ID_TOKEN_SIGNED_RESPONSE_ALG,
-		resource,
+		[custom.clock_tolerance]: oidcConfig.tolerance,
+		id_token_signed_response_alg: undefined, // Will be set below if needed
+		resource: oidcConfig.resource,
 		token_endpoint_auth_method: "none",
 	};
 
@@ -137,19 +126,6 @@ async function getOIDCClient(settings: OIDCSettings, accountname: string): Promi
 	return new issuer.Client(client_config);
 }
 
-/*************  ✨ Codeium Command ⭐  *************/
-/**
- * Generates the OpenID Connect authorization URL.
- * @param params - An object containing the session ID and account name.
-
- * @returns A promise that resolves to the authorization URL.
- *
- * This function retrieves an OIDC client for the specified account name,
- * generates a CSRF token, and constructs the authorization URL with the
- * necessary scopes and state.
- */
-
-/******  0ad0415f-a3b4-4390-abf8-f7b79240e93c  *******/
 export async function getOIDCAuthorizationUrl(
 	settings: OIDCSettings,
 	params: { sessionId: string; accountname: string }
@@ -161,8 +137,17 @@ export async function getOIDCAuthorizationUrl(
 		params.accountname
 	);
 
+	// Fetch config to get scopes dynamically
+	const kongProxyUrl = env.KONG_PROXY_URL || "http://localhost:8000";
+	const response = await fetch(`${kongProxyUrl}/account-service/client/${params.accountname}`);
+	if (!response.ok) {
+		throw new Error(`Failed to fetch config for ${params.accountname}`);
+	}
+	const config = await response.json();
+	const oidcConfig = z.object({ scopes: z.string() }).parse(config.oidc);
+
 	return client.authorizationUrl({
-		scope: OIDConfig.SCOPES,
+		scope: oidcConfig.scopes,
 		state: csrfToken,
 	});
 }
