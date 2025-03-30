@@ -99,10 +99,13 @@ async function getOIDCClient(settings: OIDCSettings, accountname: string): Promi
 		throw new Error("Account name is required to fetch OIDC client details");
 	}
 
-	const accountServiceUrl = env.ACCOUNT_SERVICE_URL;
-	if (!accountServiceUrl) {
-		throw new Error("ACCOUNT_SERVICE_URL is not defined in environment variables");
+	const kongProxyUrl = env.KONG_PROXY_URL || "http://localhost:8000";
+	if (!kongProxyUrl) {
+		throw new Error("KONG_PROXY_URL is not defined in environment variables");
 	}
+	const accountServiceRoute = "/account-service";
+	const accountServiceUrl = `${kongProxyUrl}${accountServiceRoute}`;
+
 	const response = await fetch(`${accountServiceUrl}/client/${accountname}`);
 	if (!response.ok) {
 		throw new Error(`Failed to fetch client details for ${accountname}: ${response.statusText}`);
@@ -134,6 +137,19 @@ async function getOIDCClient(settings: OIDCSettings, accountname: string): Promi
 	return new issuer.Client(client_config);
 }
 
+/*************  ✨ Codeium Command ⭐  *************/
+/**
+ * Generates the OpenID Connect authorization URL.
+ * @param params - An object containing the session ID and account name.
+
+ * @returns A promise that resolves to the authorization URL.
+ *
+ * This function retrieves an OIDC client for the specified account name,
+ * generates a CSRF token, and constructs the authorization URL with the
+ * necessary scopes and state.
+ */
+
+/******  0ad0415f-a3b4-4390-abf8-f7b79240e93c  *******/
 export async function getOIDCAuthorizationUrl(
 	settings: OIDCSettings,
 	params: { sessionId: string; accountname: string }

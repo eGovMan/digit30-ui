@@ -13,9 +13,6 @@
     import { browser } from "$app/environment";
     import { loginModalOpen } from "$lib/stores/loginModal";
 
-    const ACCOUNT_SERVICE_URL = 'http://localhost:12000';
-    const REDIRECT_BASE_URL = 'http://localhost:5173'; // Full base URL for redirect
-
     let { data } = $props();
     let loading = $state(false);
     let files: File[] = $state([]);
@@ -65,7 +62,15 @@
     async function checkAccount() {
         if (!accountname) return;
         try {
-            const response = await fetch(`${ACCOUNT_SERVICE_URL}/client/${accountname}`);
+
+			const kongProxyUrl = envPublic.KONG_PROXY_URL || "http://localhost:8000"; 
+			if (!kongProxyUrl) {
+				throw new Error("KONG_PROXY_URL is not defined in environment variables");
+			}
+			const accountServiceRoute = "/account-service"; 
+			const accountServiceUrl = `${kongProxyUrl}${accountServiceRoute}`;
+			const REDIRECT_BASE_URL = 'http://localhost:5173'; // Full base URL for redirect
+            const response = await fetch(`${accountServiceUrl}/client/${accountname}`);
             if (!response.ok) {
                 accountExists = false;
                 authUrl = null;
@@ -118,7 +123,14 @@
             return;
         }
         try {
-            const response = await fetch(`${ACCOUNT_SERVICE_URL}/create-account`, {
+			const kongProxyUrl = envPublic.KONG_PROXY_URL || "http://localhost:8000"; 
+			if (!kongProxyUrl) {
+				throw new Error("KONG_PROXY_URL is not defined in environment variables");
+			}
+			const accountServiceRoute = "/account-service"; 
+			const accountServiceUrl = `${kongProxyUrl}${accountServiceRoute}`;
+			const REDIRECT_BASE_URL = 'http://localhost:5173'; // Full base URL for redirect
+            const response = await fetch(`${accountServiceUrl}/create-account`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ accountname, adminEmail, password })
