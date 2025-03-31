@@ -54,7 +54,7 @@ export const load: LayoutServerLoad = async ({ locals, depends, fetch }) => {
 	const enableAssistants = env.ENABLE_ASSISTANTS === "true";
 	const assistantActive = !models.some((m: { id: string }) => m.id === settings?.activeModel);
 
-	console.log("settings.activeModel:", settings?.activeModel);
+	// console.log("settings.activeModel:", settings?.activeModel);
 	const assistant =
 		assistantActive && settings?.activeModel && /^[0-9a-fA-F]{24}$/.test(settings.activeModel)
 			? await collections.assistants.findOne({

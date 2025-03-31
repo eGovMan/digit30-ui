@@ -59,7 +59,7 @@ export function refreshSessionCookie(cookies: Cookies, sessionId: string) {
 export async function findUser(sessionId: string): Promise<User | null> {
 	const session = await collections.sessions.findOne({ sessionId });
 	if (!session) {
-		console.log("No session found for sessionId:", sessionId);
+		// console.log("No session found for sessionId:", sessionId);
 		return null;
 	}
 
@@ -108,7 +108,7 @@ async function getOIDCClient(settings: OIDCSettings, accountname: string): Promi
 	}
 	const config = await response.json();
 
-	console.log("OIDC config from account service:", config);
+	// console.log("OIDC config from account service:", config);
 
 	const oidcConfig = z
 		.object({

@@ -6,7 +6,7 @@ import type { User } from "$lib/types/User";
 
 export async function GET({ cookies }) {
 	const sessionId = cookies.get(env.COOKIE_NAME || "session");
-	console.log("Checking session ID from cookie:", sessionId);
+	// console.log("Checking session ID from cookie:", sessionId);
 
 	if (!sessionId) {
 		console.log("No session ID found in cookies");
@@ -14,10 +14,10 @@ export async function GET({ cookies }) {
 	}
 
 	const user: User | null = await findUser(sessionId);
-	console.log("User found for session:", JSON.stringify(user, null, 2));
+	// console.log("User found for session:", JSON.stringify(user, null, 2));
 
 	if (!user || !user.accessToken) {
-		console.log("No user or access token found for session ID:", sessionId);
+		// console.log("No user or access token found for session ID:", sessionId);
 		return new Response(null, { status: 401 });
 	}
 
@@ -27,7 +27,7 @@ export async function GET({ cookies }) {
 	const clientSecret = env.KEYCLOAK_SERVER_CLIENT_SECRET || "";
 
 	const introspectUrl = `${keycloakUrl}/realms/${realm}/protocol/openid-connect/token/introspect`;
-	console.log("Introspecting token at:", introspectUrl, "with token:", user.accessToken);
+	// console.log("Introspecting token at:", introspectUrl, "with token:", user.accessToken);
 
 	const introspectResponse = await fetch(introspectUrl, {
 		method: "POST",
@@ -48,14 +48,14 @@ export async function GET({ cookies }) {
 	}
 
 	const introspectData = await introspectResponse.json();
-	console.log("Introspection result:", JSON.stringify(introspectData, null, 2));
+	// console.log("Introspection result:", JSON.stringify(introspectData, null, 2));
 
 	if (!introspectData.active) {
-		console.log("Access token is not active for session ID:", sessionId);
+		// console.log("Access token is not active for session ID:", sessionId);
 		return new Response(null, { status: 401 });
 	}
 
-	console.log("Session validated successfully with active token");
+	// console.log("Session validated successfully with active token");
 	return json({
 		authenticated: true,
 		user: {

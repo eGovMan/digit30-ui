@@ -277,22 +277,24 @@
             const logoutParams = new URLSearchParams({
                 client_id: clientId,
                 refresh_token: refreshToken,
-                post_logout_redirect_uri: redirectUri,
+                post_logout_redirect_uri: redirectUri
             });
 
-            const response = await fetch(`${keycloakUrl}?${logoutParams.toString()}`, {
-                method: "POST",
-                headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            });
+            // const response = await fetch(`${keycloakUrl}?${logoutParams.toString()}`, {
+            //     method: "POST",
+            //     headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            // });
+            const logoutUrl = `${keycloakUrl}?${logoutParams.toString()}`;
+            window.location.href = logoutUrl;
 
-            if (!response.ok) {
-                throw new Error(`Logout failed: ${response.status} ${response.statusText}`);
-            }
+            // if (!response.ok) {
+            //     throw new Error(`Logout failed: ${response.status} ${response.statusText}`);
+            // }
 
             await fetch("/api/logout", { method: "POST", credentials: "include" });
             user = null;
             canLogin = true;
-            $loginModalOpen = true; // Show modal instead of redirecting
+            // $loginModalOpen = true; // Show modal instead of redirecting
         } catch (err) {
             console.error("Logout error:", err);
             user = null;

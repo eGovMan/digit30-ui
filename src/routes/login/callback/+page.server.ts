@@ -39,10 +39,10 @@ export async function load({ url, locals, cookies, request, getClientAddress }) 
 		})
 		.parse(Object.fromEntries(url.searchParams.entries()));
 
-	console.log("Callback received - state:", state);
+	// console.log("Callback received - state:", state);
 
 	const csrfTokenBase64 = Buffer.from(state, "base64").toString("utf-8");
-	console.log("Decoded CSRF token (base64):", csrfTokenBase64);
+	// console.log("Decoded CSRF token (base64):", csrfTokenBase64);
 
 	const sessionId = cookies.get("temp_session_id");
 	if (!sessionId) {
@@ -54,7 +54,7 @@ export async function load({ url, locals, cookies, request, getClientAddress }) 
 		error(403, "Invalid or expired CSRF token");
 	}
 	const accountName = validatedToken.realm;
-	console.log("Account name extracted from state:", accountName);
+	// console.log("Account name extracted from state:", accountName);
 
 	// Get user data and tokens from Keycloak
 	const { userData, accessToken, refreshToken, expiresIn } = await getOIDCUserData(
@@ -63,7 +63,7 @@ export async function load({ url, locals, cookies, request, getClientAddress }) 
 		iss,
 		request
 	);
-	console.log("Tokens from getOIDCUserData:", { accessToken, refreshToken, expiresIn });
+	// console.log("Tokens from getOIDCUserData:", { accessToken, refreshToken, expiresIn });
 
 	// Filter by allowed user emails or domains
 	if (allowedUserEmails.length > 0 || allowedUserDomains.length > 0) {
@@ -84,13 +84,13 @@ export async function load({ url, locals, cookies, request, getClientAddress }) 
 		}
 	}
 
-	console.log("Updating user with:", {
-		sessionId,
-		accountName,
-		accessToken,
-		refreshToken,
-		expiresIn,
-	});
+	// console.log("Updating user with:", {
+	// 	sessionId,
+	// 	accountName,
+	// 	accessToken,
+	// 	refreshToken,
+	// 	expiresIn,
+	// });
 	await updateUser({
 		userData,
 		locals,
@@ -119,11 +119,11 @@ export async function load({ url, locals, cookies, request, getClientAddress }) 
 
 	cookies.delete("temp_session_id", { path: "/" });
 
-	console.log("User logged in:", {
-		username: userData.username,
-		email: userData.email,
-		accountName,
-	});
+	// console.log("User logged in:", {
+	// 	username: userData.username,
+	// 	email: userData.email,
+	// 	accountName,
+	// });
 
 	throw redirect(302, `${base}/`);
 }
