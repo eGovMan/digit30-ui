@@ -14,6 +14,7 @@ import type { Cookies } from "@sveltejs/kit";
 import { collections } from "$lib/server/database";
 import { logger } from "$lib/server/logger";
 import type { User } from "$lib/types/User";
+import { addWeeks } from "date-fns";
 
 // Define interfaces for OIDC settings and user info
 export interface OIDCSettings {
