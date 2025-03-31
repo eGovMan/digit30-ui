@@ -9,7 +9,7 @@ export const endpointLlamacppParametersSchema = z.object({
 	weight: z.number().int().positive().default(1),
 	model: z.any(),
 	type: z.literal("llamacpp"),
-	url: z.string().url().default("http://127.0.0.1:8080"), // legacy, feel free to remove in breaking change update
+	url: z.string().url().default("http://127.0.0.1:8082"), // legacy, feel free to remove in breaking change update
 	baseURL: z.string().url().optional(),
 	accessToken: z.string().default(env.HF_TOKEN ?? env.HF_ACCESS_TOKEN),
 });
@@ -27,6 +27,8 @@ export function endpointLlamacpp(
 		});
 
 		const parameters = { ...model.parameters, ...generateSettings };
+
+		console.log(url, baseURL, "url and baseURL");
 
 		const r = await fetch(`${baseURL ?? url}/completion`, {
 			method: "POST",

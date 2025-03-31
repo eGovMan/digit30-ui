@@ -33,6 +33,8 @@
             console.log('Session check response status:', response.status);
             if (response.ok) {
                 isAuthenticated = true;
+				const sessionData = await response.json();
+				accountname = sessionData.accountname || ''; 
                 console.log('User is authenticated');
             } else {
                 isAuthenticated = false;
@@ -69,7 +71,7 @@
 			}
 			const accountServiceRoute = "/account-service"; 
 			const accountServiceUrl = `${kongProxyUrl}${accountServiceRoute}`;
-			const REDIRECT_BASE_URL = 'http://localhost:5173'; // Full base URL for redirect
+			// const REDIRECT_BASE_URL = 'http://localhost:5173'; // Full base URL for redirect
             const response = await fetch(`${accountServiceUrl}/client/${accountname}`);
             if (!response.ok) {
                 accountExists = false;
@@ -79,7 +81,7 @@
             }
             const data = await response.json();
             accountExists = true;
-            authUrl = data.authUrl;
+            authUrl = data.oidc.authUrl;
             console.log('Account details fetched:', { authUrl });
         } catch (err) {
             console.error('Error in checkAccount:', err);
@@ -100,6 +102,7 @@
         }
         const sessionId = crypto.randomUUID();
         try {
+			console.log(base);
             const response = await fetch(`${base}/api/login?accountname=${accountname}&sessionId=${sessionId}`, {
                 credentials: 'include'
             });

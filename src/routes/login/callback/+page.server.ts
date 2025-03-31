@@ -5,7 +5,6 @@ import { base } from "$app/paths";
 import { updateUser } from "./updateUser";
 import { env } from "$env/dynamic/private";
 import JSON5 from "json5";
-// import { collections } from "$lib/server/database";
 
 const allowedUserEmails = z
 	.array(z.string().email())
@@ -39,10 +38,10 @@ export async function load({ url, locals, cookies, request, getClientAddress }) 
 		})
 		.parse(Object.fromEntries(url.searchParams.entries()));
 
-	console.log("Callback received - state:", state); // Log raw state
+	console.log("Callback received - state:", state);
 
 	const csrfTokenBase64 = Buffer.from(state, "base64").toString("utf-8");
-	console.log("Decoded CSRF token (base64):", csrfTokenBase64); // Log decoded state
+	console.log("Decoded CSRF token (base64):", csrfTokenBase64);
 
 	const sessionId = cookies.get("temp_session_id");
 	if (!sessionId) {
@@ -53,15 +52,16 @@ export async function load({ url, locals, cookies, request, getClientAddress }) 
 	if (!validatedToken) {
 		error(403, "Invalid or expired CSRF token");
 	}
-	console.log("Validated CSRF token:", validatedToken); // Log parsed token
+	const accountName = validatedToken.realm; // Extract from state
+	console.log("Account name extracted from state:", accountName);
 
-	const { userData } = await getOIDCUserData(
+	// Get user data and tokens from Keycloak
+	const { userData, accessToken, refreshToken, expiresIn } = await getOIDCUserData(
 		{ redirectURI: validatedToken.redirectUrl },
 		code,
 		iss,
 		request
 	);
-	console.log("User data from Keycloak:", userData); // Log user data
 
 	// Filter by allowed user emails or domains
 	if (allowedUserEmails.length > 0 || allowedUserDomains.length > 0) {
@@ -82,28 +82,41 @@ export async function load({ url, locals, cookies, request, getClientAddress }) 
 		}
 	}
 
-	// Pass sessionId to updateUser
+	// Pass accountname along with other data to updateUser
 	await updateUser({
 		userData,
 		locals,
 		cookies,
 		userAgent: request.headers.get("user-agent") ?? undefined,
 		ip: getClientAddress(),
-		sessionId, // Pass the original sessionId
+		sessionId,
+		accountName,
+		refreshToken,
+		accessToken,
+		tokenExpiresIn: expiresIn,
 	});
 
-	// Session already inserted by updateUser, just set the cookie
+	// Set session cookie
 	cookies.set("session", sessionId, {
 		path: "/",
 		httpOnly: true,
 		secure: !import.meta.env.DEV,
 	});
+
+	// Store refresh token in a separate httpOnly cookie
+	cookies.set("refresh_token", refreshToken, {
+		path: "/",
+		httpOnly: true,
+		secure: !import.meta.env.DEV,
+		maxAge: 30 * 24 * 60 * 60, // 30 days, adjust based on Keycloak config
+	});
+
 	cookies.delete("temp_session_id", { path: "/" });
 
-	// Log successful login (moved from user.set)
 	console.log("User logged in:", {
 		username: userData.username,
 		email: userData.email,
+		accountName,
 	});
 
 	throw redirect(302, `${base}/`);

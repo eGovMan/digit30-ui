@@ -85,6 +85,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 		request: event.request,
 	});
 
+	// const requiresUser = false;
+
 	function errorResponse(status: number, message: string) {
 		const sendJson =
 			event.request.headers.get("accept")?.includes("application/json") ||
@@ -95,6 +97,17 @@ export const handle: Handle = async ({ event, resolve }) => {
 				"content-type": sendJson ? "application/json" : "text/plain",
 			},
 		});
+	}
+
+	if (
+		!event.url.pathname.startsWith(`${base}/login`) &&
+		!event.url.pathname.startsWith(`${base}/admin`) &&
+		!event.url.pathname.startsWith(`${base}/settings`) &&
+		!["GET", "OPTIONS", "HEAD"].includes(event.request.method)
+	) {
+		if (!event.locals.user && requiresUser) {
+			return errorResponse(401, ERROR_MESSAGES.authOnly);
+		}
 	}
 
 	if (event.url.pathname.startsWith(`${base}/admin/`) || event.url.pathname === `${base}/admin`) {

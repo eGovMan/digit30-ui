@@ -23,7 +23,7 @@
 		: 'text-gray-800 dark:bg-gray-100 dark:text-gray-600'}"
 >
 	<a
-		href={model.modelUrl || "https://huggingface.co/" + model.name}
+		href={model?.modelUrl || "https://huggingface.co/" + model?.name}
 		target="_blank"
 		rel="noreferrer"
 		class="flex items-center hover:underline"
@@ -31,9 +31,9 @@
 		Model
 		<div class="max-sm:hidden">&nbsp;page</div></a
 	>
-	{#if model.datasetName || model.datasetUrl}
+	{#if model?.datasetName || model?.datasetUrl}
 		<a
-			href={model.datasetUrl || "https://huggingface.co/datasets/" + model.datasetName}
+			href={model?.datasetUrl || "https://huggingface.co/datasets/" + model?.datasetName}
 			target="_blank"
 			rel="noreferrer"
 			class="flex items-center hover:underline"
@@ -42,9 +42,9 @@
 			<div class="max-sm:hidden">&nbsp;page</div></a
 		>
 	{/if}
-	{#if model.hasInferenceAPI}
+	{#if model?.hasInferenceAPI}
 		<a
-			href={"https://huggingface.co/playground?modelId=" + model.name}
+			href={"https://huggingface.co/playground?modelId=" + model?.name}
 			target="_blank"
 			rel="noreferrer"
 			class="flex items-center hover:underline"
@@ -52,14 +52,14 @@
 			API
 		</a>
 	{/if}
-	{#if model.websiteUrl}
+	{#if model?.websiteUrl}
 		<a
-			href={model.websiteUrl}
+			href={model?.websiteUrl}
 			target="_blank"
 			class="ml-auto flex items-center hover:underline"
 			rel="noreferrer"
 		>
-			{#if model.name.startsWith("meta-llama/Meta-Llama")}
+			{#if model?.name.startsWith("meta-llama/Meta-Llama")}
 				<BIMeta class="mr-1.5 shrink-0 text-xs text-gray-400" />
 				Built with Llama
 			{:else}

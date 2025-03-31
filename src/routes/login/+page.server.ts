@@ -21,7 +21,7 @@ export const actions = {
 			{ redirectURI },
 			{ sessionId: locals.sessionId }
 		);
-
+		console.log(authorizationUrl);
 		redirect(303, authorizationUrl);
 	},
 };

@@ -40,32 +40,32 @@
 	import { beforeNavigate } from "$app/navigation";
 
 	interface Props {
-		messages?: Message[];
-		messagesAlternatives?: Message["id"][][];
-		loading?: boolean;
-		pending?: boolean;
-		shared?: boolean;
-		currentModel: Model;
-		models: Model[];
-		assistant?: Assistant | undefined;
-		preprompt?: string | undefined;
-		files?: File[];
-	}
+        messages?: Message[];
+        messagesAlternatives?: Message["id"][][];
+        loading?: boolean;
+        pending?: boolean;
+        shared?: boolean;
+        currentModel: Model;
+        models: Model[];
+        assistant?: Assistant | undefined;
+        preprompt?: string | undefined;
+        files?: File[];
+    }
 
-	let {
-		messages = [],
-		messagesAlternatives = [],
-		loading = false,
-		pending = false,
-		shared = false,
-		currentModel,
-		models,
-		assistant = undefined,
-		preprompt = undefined,
-		files = $bindable([]),
-	}: Props = $props();
+    let {
+        messages = [],
+        messagesAlternatives = [],
+        loading = false,
+        pending = false,
+        shared = false,
+        currentModel,
+        models,
+        assistant = undefined,
+        preprompt = undefined,
+        files = $bindable([]),
+    } = $props();
 
-	let isReadOnly = $derived(!models.some((model) => model.id === currentModel.id));
+	let isReadOnly = $derived(!models.some((model) => model.id === currentModel?.id));
 
 	let message: string = $state("");
 	let timeout: ReturnType<typeof setTimeout>;
@@ -88,10 +88,11 @@
 	}>();
 
 	const handleSubmit = () => {
-		if (loading) return;
-		dispatch("message", message);
-		message = "";
-	};
+        if (loading) return;
+        console.log("Submitting message:", message, "to model:", currentModel);
+        dispatch("message", message);
+        message = "";
+    };
 
 	let lastTarget: EventTarget | null = null;
 
@@ -210,7 +211,7 @@
 				if (assistant) {
 					return assistant.tools?.includes(tool._id);
 				}
-				if (currentModel.tools) {
+				if (currentModel?.tools) {
 					return $settings?.tools?.includes(tool._id) ?? tool.isOnByDefault;
 				}
 				return false;
@@ -222,9 +223,9 @@
 		Array.from(
 			new Set([
 				...mimeTypesFromActiveTools, // fetch mime types from active tools either from tool settings or active assistant
-				...(currentModel.tools && !assistant ? ["application/pdf"] : []), // if its a tool model, we can always enable document parser so we always accept pdfs
-				...(currentModel.multimodal
-					? (currentModel.multimodalAcceptedMimetypes ?? ["image/*"])
+				...(currentModel?.tools && !assistant ? ["application/pdf"] : []), // if its a tool model, we can always enable document parser so we always accept pdfs
+				...(currentModel?.multimodal
+					? (currentModel?.multimodalAcceptedMimetypes ?? ["image/*"])
 					: []), // if its a multimodal model, we always accept images
 			])
 		)
@@ -244,7 +245,7 @@
 		onDrag = false;
 	}}
 />
-
+<!-- {page.data.loginRequired} -->
 <div class="relative min-h-0 min-w-0">
 	<div
 		class="scrollbar-custom h-full overflow-y-auto"
@@ -275,10 +276,10 @@
 
 					{assistant.name}
 				</a>
-			{:else if preprompt && preprompt != currentModel.preprompt}
+			{:else if preprompt && preprompt != currentModel?.preprompt}
 				<SystemPromptModal preprompt={preprompt ?? ""} />
 			{/if}
-
+			
 			{#if messages.length > 0}
 				<div class="flex h-max flex-col gap-8 pb-52">
 					{#each messages as message, idx (message.id)}
@@ -430,8 +431,8 @@
 								on:submit={handleSubmit}
 								{onPaste}
 								disabled={isReadOnly || lastIsError}
-								modelHasTools={currentModel.tools}
-								modelIsMultimodal={currentModel.multimodal}
+								modelHasTools={currentModel?.tools}
+								modelIsMultimodal={currentModel?.multimodal}
 							/>
 						{/if}
 
@@ -475,15 +476,15 @@
 				<p>
 					Model:
 					{#if !assistant}
-						{#if models.find((m) => m.id === currentModel.id)}
+						{#if models.find((m) => m.id === currentModel?.id)}
 							<a
-								href="{base}/settings/{currentModel.id}"
+								href="{base}/settings/{currentModel?.id}"
 								class="inline-flex items-center hover:underline"
-								>{currentModel.displayName}<CarbonCaretDown class="text-xxs" /></a
+								>{currentModel?.displayName}<CarbonCaretDown class="text-xxs" /></a
 							>
 						{:else}
 							<span class="inline-flex items-center line-through dark:border-gray-700">
-								{currentModel.id}
+								{currentModel?.id}
 							</span>
 						{/if}
 					{:else}
@@ -496,7 +497,7 @@
 							>
 						{:else}
 							<span class="inline-flex items-center line-through dark:border-gray-700">
-								{currentModel.id}
+								{currentModel?.id}
 							</span>
 						{/if}
 					{/if}

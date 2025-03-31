@@ -1,8 +1,9 @@
+// src/routes/+layout.server.ts
 import type { LayoutServerLoad } from "./$types";
 import { collections } from "$lib/server/database";
 import type { Conversation } from "$lib/types/Conversation";
 import { UrlDependency } from "$lib/types/UrlDependency";
-import { defaultModel, models, oldModels, validateModel } from "$lib/server/models";
+import { defaultModel, oldModels } from "$lib/server/models"; // Remove static `models`
 import { authCondition, requiresUser } from "$lib/server/auth";
 import { DEFAULT_SETTINGS } from "$lib/types/Settings";
 import { env } from "$env/dynamic/private";
@@ -10,48 +11,56 @@ import { ObjectId } from "mongodb";
 import type { ConvSidebar } from "$lib/types/ConvSidebar";
 import { toolFromConfigs } from "$lib/server/tools";
 import { MetricsServer } from "$lib/server/metrics";
-import type { ToolFront, ToolInputFile } from "$lib/types/Tool";
+import type { ToolInputFile } from "$lib/types/Tool";
 import { ReviewStatus } from "$lib/types/Review";
 import { base } from "$app/paths";
-// import { findUser } from '$lib/server/auth';
 
 export const load: LayoutServerLoad = async ({ locals, depends, fetch }) => {
 	depends(UrlDependency.ConversationList);
 
+	// Fetch dynamic config from account-service
+	const kongProxyUrl = env.KONG_PROXY_URL || "http://localhost:8000";
+	const response = await fetch(`${kongProxyUrl}/account-service/client/eGov`);
+	const config = response.ok ? await response.json() : {};
+	const models = config.models || []; // Dynamic models from account-service
+
 	const settings = await collections.settings.findOne(authCondition(locals));
 
-	// If the active model in settings is not valid, set it to the default model. This can happen if model was disabled.
+	// If active model isn’t valid, set to first model from account-service or default
 	if (
 		settings &&
-		!validateModel(models).safeParse(settings?.activeModel).success &&
+		!models.some((m: { id: string }) => m.id === settings.activeModel) &&
 		!settings.assistants?.map((el) => el.toString())?.includes(settings?.activeModel)
 	) {
-		settings.activeModel = defaultModel.id;
+		const newActiveModel = models[0]?.id || defaultModel.id;
+		settings.activeModel = newActiveModel;
 		await collections.settings.updateOne(authCondition(locals), {
-			$set: { activeModel: defaultModel.id },
+			$set: { activeModel: newActiveModel },
 		});
 	}
 
-	// if the model is unlisted, set the active model to the default model
+	// If the model is unlisted, reset to first available
 	if (
 		settings?.activeModel &&
-		models.find((m) => m.id === settings?.activeModel)?.unlisted === true
+		models.find((m: { id: string; unlisted?: boolean }) => m.id === settings.activeModel)?.unlisted
 	) {
-		settings.activeModel = defaultModel.id;
+		const newActiveModel = models[0]?.id || defaultModel.id;
+		settings.activeModel = newActiveModel;
 		await collections.settings.updateOne(authCondition(locals), {
-			$set: { activeModel: defaultModel.id },
+			$set: { activeModel: newActiveModel },
 		});
 	}
 
 	const enableAssistants = env.ENABLE_ASSISTANTS === "true";
+	const assistantActive = !models.some((m: { id: string }) => m.id === settings?.activeModel);
 
-	const assistantActive = !models.map(({ id }) => id).includes(settings?.activeModel ?? "");
-
-	const assistant = assistantActive
-		? await collections.assistants.findOne({
-				_id: new ObjectId(settings?.activeModel),
-			})
-		: null;
+	console.log("settings.activeModel:", settings?.activeModel);
+	const assistant =
+		assistantActive && settings?.activeModel && /^[0-9a-fA-F]{24}$/.test(settings.activeModel)
+			? await collections.assistants.findOne({
+					_id: new ObjectId(settings?.activeModel),
+				})
+			: null;
 
 	const nConversations = await collections.conversations.countDocuments(authCondition(locals));
 
@@ -88,32 +97,31 @@ export const load: LayoutServerLoad = async ({ locals, depends, fetch }) => {
 
 	const messagesBeforeLogin = env.MESSAGES_BEFORE_LOGIN ? parseInt(env.MESSAGES_BEFORE_LOGIN) : 0;
 
-	let loginRequired = false;
+	const loginRequired = false;
 
-	if (requiresUser && !locals.user) {
-		if (messagesBeforeLogin === 0) {
-			loginRequired = true;
-		} else if (nConversations >= messagesBeforeLogin) {
-			loginRequired = true;
-		} else {
-			// get the number of messages where `from === "assistant"` across all conversations.
-			const totalMessages =
-				(
-					await collections.conversations
-						.aggregate([
-							{ $match: { ...authCondition(locals), "messages.from": "assistant" } },
-							{ $project: { messages: 1 } },
-							{ $limit: messagesBeforeLogin + 1 },
-							{ $unwind: "$messages" },
-							{ $match: { "messages.from": "assistant" } },
-							{ $count: "messages" },
-						])
-						.toArray()
-				)[0]?.messages ?? 0;
+	// `if (requiresUser && !locals.user) {
+	//     if (messagesBeforeLogin === 0) {
+	//         loginRequired = true;
+	//     } else if (nConversations >= messagesBeforeLogin) {
+	//         loginRequired = true;
+	//     } else {
+	//         const totalMessages =
+	//             (
+	//                 await collections.conversations
+	//                     .aggregate([
+	//                         { $match: { ...authCondition(locals), "messages.from": "assistant" } },
+	//                         { $project: { messages: 1 } },
+	//                         { $limit: messagesBeforeLogin + 1 },
+	//                         { $unwind: "$messages" },
+	//                         { $match: { "messages.from": "assistant" } },
+	//                         { $count: "messages" },
+	//                     ])
+	//                     .toArray()
+	//             )[0]?.messages ?? 0;
 
-			loginRequired = totalMessages >= messagesBeforeLogin;
-		}
-	}
+	//         loginRequired = totalMessages >= messagesBeforeLogin;
+	//     }
+	// }`
 
 	const toolUseDuration = (await MetricsServer.getMetrics().tool.toolUseDuration.get()).values;
 
@@ -148,8 +156,6 @@ export const load: LayoutServerLoad = async ({ locals, depends, fetch }) => {
 						if (settings?.hideEmojiOnSidebar) {
 							conv.title = conv.title.replace(/\p{Emoji}/gu, "");
 						}
-
-						// remove invalid unicode and trim whitespaces
 						conv.title = conv.title.replace(/\uFFFD/gu, "").trimStart();
 
 						let avatarUrl: string | undefined = undefined;
@@ -189,7 +195,7 @@ export const load: LayoutServerLoad = async ({ locals, depends, fetch }) => {
 			),
 			ethicsModalAccepted: !!settings?.ethicsModalAcceptedAt,
 			ethicsModalAcceptedAt: settings?.ethicsModalAcceptedAt ?? null,
-			activeModel: settings?.activeModel ?? DEFAULT_SETTINGS.activeModel,
+			activeModel: settings?.activeModel ?? (models[0]?.id || DEFAULT_SETTINGS.activeModel),
 			hideEmojiOnSidebar: settings?.hideEmojiOnSidebar ?? false,
 			shareConversationsWithModelAuthors:
 				settings?.shareConversationsWithModelAuthors ??
@@ -205,51 +211,48 @@ export const load: LayoutServerLoad = async ({ locals, depends, fetch }) => {
 			directPaste: settings?.directPaste ?? DEFAULT_SETTINGS.directPaste,
 		},
 		models: models.map((model) => ({
-			id: model.id,
+			id: model.name, // Use "name" as id to match account-service
 			name: model.name,
 			websiteUrl: model.websiteUrl,
 			modelUrl: model.modelUrl,
 			tokenizer: model.tokenizer,
 			datasetName: model.datasetName,
 			datasetUrl: model.datasetUrl,
-			displayName: model.displayName,
+			displayName: model.displayName || model.name,
 			description: model.description,
 			reasoning: !!model.reasoning,
 			logoUrl: model.logoUrl,
 			promptExamples: model.promptExamples,
 			parameters: model.parameters,
 			preprompt: model.preprompt,
-			multimodal: model.multimodal,
+			multimodal: model.multimodal || false,
 			multimodalAcceptedMimetypes: model.multimodalAcceptedMimetypes,
-			tools: model.tools,
-			unlisted: model.unlisted,
-			hasInferenceAPI: model.hasInferenceAPI,
+			tools: model.tools || false,
+			unlisted: model.unlisted || false,
+			hasInferenceAPI: model.hasInferenceAPI || false,
 		})),
 		oldModels,
 		tools: [...toolFromConfigs, ...communityTools]
 			.filter((tool) => !tool?.isHidden)
-			.map(
-				(tool) =>
-					({
-						_id: tool._id.toString(),
-						type: tool.type,
-						displayName: tool.displayName,
-						name: tool.name,
-						description: tool.description,
-						mimeTypes: (tool.inputs ?? [])
-							.filter((input): input is ToolInputFile => input.type === "file")
-							.map((input) => (input as ToolInputFile).mimeTypes)
-							.flat(),
-						isOnByDefault: tool.isOnByDefault ?? true,
-						isLocked: tool.isLocked ?? true,
-						timeToUseMS:
-							toolUseDuration.find(
-								(el) => el.labels.tool === tool._id.toString() && el.labels.quantile === 0.9
-							)?.value ?? 15_000,
-						color: tool.color,
-						icon: tool.icon,
-					}) satisfies ToolFront
-			),
+			.map((tool) => ({
+				_id: tool._id.toString(),
+				type: tool.type,
+				displayName: tool.displayName,
+				name: tool.name,
+				description: tool.description,
+				mimeTypes: (tool.inputs ?? [])
+					.filter((input): input is ToolInputFile => input.type === "file")
+					.map((input) => (input as ToolInputFile).mimeTypes)
+					.flat(),
+				isOnByDefault: tool.isOnByDefault ?? true,
+				isLocked: tool.isLocked ?? true,
+				timeToUseMS:
+					toolUseDuration.find(
+						(el) => el.labels.tool === tool._id.toString() && el.labels.quantile === 0.9
+					)?.value ?? 15_000,
+				color: tool.color,
+				icon: tool.icon,
+			})),
 		communityToolCount: await collections.tools.countDocuments({
 			type: "community",
 			review: ReviewStatus.APPROVED,

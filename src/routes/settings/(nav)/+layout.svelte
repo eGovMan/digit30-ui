@@ -290,6 +290,16 @@
 				<UserIcon class="text-sm" />
 				Application Settings
 			</button>
+			<button
+				type="button"
+				onclick={() => goto(`${base}/settings/account`)}
+				class="group flex h-10 w-full flex-none items-center gap-2 px-4 text-sm text-gray-500 hover:bg-gray-100 max-md:order-first md:rounded-xl md:px-3
+				{page.url.pathname === `${base}/settings/application` ? '!bg-gray-100 !text-gray-800' : ''}"
+				aria-label="Configure account settings"
+			>
+				<UserIcon class="text-sm" />
+				Account Settings
+			</button>
 		</div>
 	{/if}
 	{#if showContent}

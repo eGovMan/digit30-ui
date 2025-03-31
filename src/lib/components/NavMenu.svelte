@@ -13,6 +13,7 @@
     import type { Conversation } from "$lib/types/Conversation";
     import { CONV_NUM_PER_PAGE } from "$lib/constants/pagination";
     import { loginModalOpen } from "$lib/stores/loginModal";
+    import { createEventDispatcher } from "svelte";
 
     interface Props {
         conversations: ConvSidebar[];
@@ -56,6 +57,9 @@
         month: "This month",
         older: "Older",
     } as const;
+
+	const dispatch = createEventDispatcher();
+
 
     const nModels: number = $page.data.models.filter((el: Model) => !el.unlisted).length;
 
@@ -144,29 +148,7 @@
 <div
     class="mt-0.5 flex touch-none flex-col gap-1 rounded-r-xl p-3 text-sm md:bg-gradient-to-l md:from-gray-50 md:dark:from-gray-800/30"
 >
-    {#if canLogin}
-        <button
-            type="button"
-            onclick={() => loginModalOpen.set(true)}
-            class="flex h-9 w-full flex-none items-center gap-1.5 rounded-lg pl-2.5 pr-2 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
-        >
-            Login
-        </button>
-    {:else if user}
-        <div class="group flex items-center gap-1.5 rounded-lg pl-2.5 pr-2 hover:bg-gray-100 dark:hover:bg-gray-700">
-            <span class="flex h-9 flex-none shrink items-center gap-1.5 truncate pr-2 text-gray-500 dark:text-gray-400">
-                {user.username || user.email || "User"}
-            </span>
-            <form action="{base}/logout" method="post" class="ml-auto">
-                <button
-                    type="submit"
-                    class="h-6 flex-none items-center gap-1.5 rounded-md border bg-white px-2 text-gray-700 shadow-sm group-hover:flex hover:shadow-none dark:border-gray-600 dark:bg-gray-600 dark:text-gray-400 dark:hover:text-gray-300 md:hidden"
-                >
-                    Sign Out
-                </button>
-            </form>
-        </div>
-    {/if}
+    
     <button
         onclick={switchTheme}
         type="button"
@@ -221,5 +203,24 @@
         >
             About & Privacy
         </a>
+    {/if}
+	{#if canLogin}
+        <button
+            type="button"
+            onclick={() => loginModalOpen.set(true)}
+            class="flex h-9 w-full flex-none items-center gap-1.5 rounded-lg pl-2.5 pr-2 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+        >
+            Login
+        </button>
+    {:else if user}
+        <div class="group flex items-center gap-1.5 rounded-lg pl-2.5 pr-2 hover:bg-gray-100 dark:hover:bg-gray-700">
+            <span class="flex h-9 flex-none shrink items-center gap-1.5 truncate pr-2 text-gray-500 dark:text-gray-400">
+                {user.username || user.email || "User"}
+            </span>
+            <button type="button" onclick={() => dispatch('logout')}
+		        class="h-6 flex-none items-center gap-1.5 rounded-md border bg-white px-2 text-gray-700 shadow-sm group-hover:flex hover:shadow-none dark:border-gray-600 dark:bg-gray-600 dark:text-gray-400 dark:hover:text-gray-300 md:hidden">
+        		Sign Out
+    		</button>
+        </div>
     {/if}
 </div>

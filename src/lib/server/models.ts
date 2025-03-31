@@ -5,7 +5,7 @@ import { z } from "zod";
 import endpoints, { endpointSchema, type Endpoint } from "./endpoints/endpoints";
 import { endpointTgi } from "./endpoints/tgi/endpointTgi";
 import { sum } from "$lib/utils/sum";
-import { embeddingModels, validateEmbeddingModelByName } from "./embeddingModels";
+// import { embeddingModels, validateEmbeddingModelByName } from "./embeddingModels";
 
 import type { PreTrainedTokenizer } from "@huggingface/transformers";
 
@@ -82,12 +82,13 @@ const modelConfig = z.object({
 	multimodalAcceptedMimetypes: z.array(z.string()).optional(),
 	tools: z.boolean().default(false),
 	unlisted: z.boolean().default(false),
-	embeddingModel: validateEmbeddingModelByName(embeddingModels).optional(),
+	// embeddingModel: validateEmbeddingModelByName(embeddingModels).optional(),
 	/** Used to enable/disable system prompt usage */
 	systemRoleSupported: z.boolean().default(true),
 	reasoning: reasoningSchema.optional(),
 });
 
+console.log(env.MODELS);
 const modelsRaw = z.array(modelConfig).parse(JSON5.parse(env.MODELS));
 
 async function getChatPromptRender(

@@ -36,7 +36,7 @@
 			</div>
 			<p class="text-base text-gray-600 dark:text-gray-400">
 				{envPublic.PUBLIC_APP_DESCRIPTION ||
-					"Making the community's best AI chat models available to everyone."}
+					"Open Source Stack for Public Service Delivery"}
 			</p>
 		</div>
 	</div>
@@ -50,15 +50,15 @@
 				>
 			</AnnouncementBanner>
 		{/each}
-		<div class="overflow-hidden rounded-xl border dark:border-gray-800">
+		<!-- <div class="overflow-hidden rounded-xl border dark:border-gray-800">
 			<div class="flex p-3">
 				<div>
 					<div class="text-sm text-gray-600 dark:text-gray-400">Current Model</div>
 					<div class="flex items-center gap-1.5 font-semibold max-sm:text-smd">
-						{#if currentModel.logoUrl}
+						{#if currentModel?.logoUrl}
 							<img
 								class=" overflown aspect-square size-4 rounded border dark:border-gray-700"
-								src={currentModel.logoUrl}
+								src={currentModel?.logoUrl}
 								alt=""
 							/>
 						{:else}
@@ -66,24 +66,24 @@
 								class="size-4 rounded border border-transparent bg-gray-300 dark:bg-gray-800"
 							></div>
 						{/if}
-						{currentModel.displayName}
+						{currentModel?.displayName}
 					</div>
 				</div>
 				<a
-					href="{base}/settings/{currentModel.id}"
+					href="{base}/settings/{currentModel?.id}"
 					aria-label="Settings"
 					class="btn ml-auto flex h-7 w-7 self-start rounded-full bg-gray-100 p-1 text-xs hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:hover:bg-gray-600"
 					><IconGear /></a
 				>
 			</div>
 			<ModelCardMetadata variant="dark" model={currentModel} />
-		</div>
+		</div> -->
 	</div>
-	{#if currentModel.promptExamples}
+	{#if currentModel?.promptExamples}
 		<div class="lg:col-span-3 lg:mt-6">
 			<p class="mb-3 text-gray-600 dark:text-gray-300">Examples</p>
 			<div class="grid gap-3 lg:grid-cols-3 lg:gap-5">
-				{#each currentModel.promptExamples as example}
+				{#each currentModel?.promptExamples as example}
 					<button
 						type="button"
 						class="rounded-xl border bg-gray-50 p-3 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 max-xl:text-sm xl:p-3.5"

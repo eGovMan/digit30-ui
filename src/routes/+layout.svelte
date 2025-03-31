@@ -18,6 +18,8 @@
     import LoginModal from "$lib/components/LoginModal.svelte";
     import OverloadedModal from "$lib/components/OverloadedModal.svelte";
     import { isHuggingChat } from "$lib/utils/isHuggingChat";
+	import { redirect } from "@sveltejs/kit";
+
 
     let { data = $bindable(), children } = $props();
 
@@ -27,12 +29,15 @@
     let conversations = $state(data.conversations);
     $effect(() => {
         data.conversations && untrack(() => (conversations = data.conversations));
+		canLogin = user === null || user === undefined;
     });
 
     let isNavCollapsed = $state(false);
     let overloadedModalOpen = $state(false);
     let errorToastTimeout: ReturnType<typeof setTimeout>;
     let currentError: string | undefined = $state();
+
+	let sessionId = null;
 
     // Sync user data on mount (initial load)
     onMount(async () => {
@@ -88,6 +93,7 @@
 
     async function deleteConversation(id: string) {
         try {
+			console.log(base);
             const res = await fetch(`${base}/conversation/${id}`, {
                 method: "DELETE",
                 headers: {
@@ -156,6 +162,10 @@
     const settings = createSettingsStore(data.settings);
 
     onMount(async () => {
+
+		// Get session ID from cookie or data
+        sessionId = document.cookie.split("; ").find(row => row.startsWith("session="))?.split("=")[1];
+
         if ($page.url.searchParams.has("model")) {
             await settings
                 .instantSet({
@@ -185,6 +195,19 @@
                     });
                 });
         }
+
+		const refreshInterval = setInterval(async () => {
+            const response = await fetch("/api/refresh", { method: "POST" });
+            if (!response.ok) {
+                console.error("Token refresh failed");
+                // Optionally redirect to login
+            } else {
+                const { expiresIn } = await response.json();
+                console.log("Token refreshed, expires in:", expiresIn);
+            }
+        }, 15 * 60 * 1000); // Refresh every 15 minutes
+
+        return () => clearInterval(refreshInterval); 
     });
 
     let mobileNavTitle = $derived(
@@ -199,6 +222,55 @@
             envPublic.PUBLIC_APP_DISCLAIMER === "1" &&
             !($page.data.shared === true)
     );
+
+	
+
+	async function handleLogout() {
+		if (!browser) return;
+
+        try {
+            // Fetch session data to get refresh token
+            const sessionResponse = await fetch("/api/session", {
+                method: "GET",
+                credentials: "include", // Include cookies
+            });
+
+            if (!sessionResponse.ok) {
+                throw new Error("Failed to fetch session data");
+            }
+
+            const { refreshToken } = await sessionResponse.json();
+
+            const keycloakUrl = "http://localhost:8080/realms/eGov/protocol/openid-connect/logout";
+            const clientId = "eGov-client";
+            const redirectUri = `${window.location.origin}${base}/`; // Must match Keycloak config
+
+            const logoutParams = new URLSearchParams({
+                client_id: clientId,
+                refresh_token: refreshToken, // Use refresh token if required
+                post_logout_redirect_uri: redirectUri,
+            });
+
+            const response = await fetch(`${keycloakUrl}?${logoutParams.toString()}`, {
+                method: "POST", // Keycloak often expects POST for logout with tokens
+                headers: {
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error(`Logout failed: ${response.status} ${response.statusText}`);
+            }
+
+            // Clear local session
+            await fetch("/api/logout", { method: "POST", credentials: "include" });
+            goto(`${base}/login`);
+        } catch (err) {
+            console.error("Logout error:", err);
+            // Optionally handle error gracefully
+            goto(`${base}/login`);
+        }
+	}
 </script>
 
 <svelte:head>
@@ -290,6 +362,9 @@
 			{conversations}
 			user={user}
 			canLogin={canLogin}
+			on:logout={() => {
+				handleLogout();
+			}}
 			on:shareConversation={(ev) => shareConversation(ev.detail.id, ev.detail.title)}
 			on:deleteConversation={(ev) => deleteConversation(ev.detail)}
 			on:editConversationTitle={(ev) => editConversationTitle(ev.detail.id, ev.detail.title)}
@@ -300,6 +375,9 @@
 			{conversations}
 			user={user}
 			canLogin={canLogin}
+			on:logout={() => {
+				handleLogout();
+			}}
 			on:shareConversation={(ev) => shareConversation(ev.detail.id, ev.detail.title)}
 			on:deleteConversation={(ev) => deleteConversation(ev.detail)}
 			on:editConversationTitle={(ev) => editConversationTitle(ev.detail.id, ev.detail.title)}

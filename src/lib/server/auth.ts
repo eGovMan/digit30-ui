@@ -85,12 +85,13 @@ async function getOIDCClient(settings: OIDCSettings, accountname: string): Promi
 	const kongProxyUrl = env.KONG_PROXY_URL || "http://localhost:8000";
 	const accountServiceRoute = "/account-service";
 	const accountServiceUrl = `${kongProxyUrl}${accountServiceRoute}`;
-
 	const response = await fetch(`${accountServiceUrl}/client/${accountname}`);
 	if (!response.ok) {
 		throw new Error(`Failed to fetch client details for ${accountname}: ${response.statusText}`);
 	}
 	const config = await response.json();
+
+	console.log(config);
 
 	// Extract OIDC configuration from the account service response
 	const oidcConfig = z
@@ -105,7 +106,12 @@ async function getOIDCClient(settings: OIDCSettings, accountname: string): Promi
 		})
 		.parse(config.oidc);
 
-	const issuerUrl = oidcConfig.authUrl.split("?")[0].replace(/\/auth$/, ""); // Extract base URL for discovery
+	// const issuerUrl = oidcConfig.authUrl.split("?")[0].replace(/\/auth$/, ""); // Extract base URL for discovery
+	// const issuer = await Issuer.discover(issuerUrl);
+
+	// Correct issuer URL for Keycloak discovery
+	const baseUrl = oidcConfig.authUrl.split("/protocol/openid-connect")[0];
+	const issuerUrl = `${baseUrl}/.well-known/openid-configuration`;
 	const issuer = await Issuer.discover(issuerUrl);
 
 	const client_config = {
@@ -113,15 +119,10 @@ async function getOIDCClient(settings: OIDCSettings, accountname: string): Promi
 		redirect_uris: [settings.redirectURI],
 		response_types: ["code"],
 		[custom.clock_tolerance]: oidcConfig.tolerance,
-		id_token_signed_response_alg: undefined, // Will be set below if needed
+		id_token_signed_response_alg: "RS256", // Explicitly set to RS256
 		resource: oidcConfig.resource,
 		token_endpoint_auth_method: "none",
 	};
-
-	const alg_supported = issuer.metadata["id_token_signing_alg_values_supported"];
-	if (Array.isArray(alg_supported) && !client_config.id_token_signed_response_alg) {
-		client_config.id_token_signed_response_alg = alg_supported[0];
-	}
 
 	return new issuer.Client(client_config);
 }
@@ -144,6 +145,7 @@ export async function getOIDCAuthorizationUrl(
 		throw new Error(`Failed to fetch config for ${params.accountname}`);
 	}
 	const config = await response.json();
+	console.log(config);
 	const oidcConfig = z.object({ scopes: z.string() }).parse(config.oidc);
 
 	return client.authorizationUrl({

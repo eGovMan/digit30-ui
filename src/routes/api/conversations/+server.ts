@@ -1,7 +1,9 @@
+import { json } from "@sveltejs/kit";
 import { collections } from "$lib/server/database";
 import { models } from "$lib/server/models";
 import { authCondition } from "$lib/server/auth";
 import type { Conversation } from "$lib/types/Conversation";
+import { ObjectId } from "mongodb";
 import { CONV_NUM_PER_PAGE } from "$lib/constants/pagination";
 
 export async function GET({ locals, url }) {
@@ -24,23 +26,65 @@ export async function GET({ locals, url }) {
 			.toArray();
 
 		if (convs.length === 0) {
-			return Response.json([]);
+			return json([]);
 		}
 
 		const res = convs.map((conv) => ({
 			_id: conv._id,
-			id: conv._id, // legacy param iOS
+			id: conv._id,
 			title: conv.title,
 			updatedAt: conv.updatedAt,
 			model: conv.model,
-			modelId: conv.model, // legacy param iOS
+			modelId: conv.model,
 			assistantId: conv.assistantId,
 			modelTools: models.find((m) => m.id == conv.model)?.tools ?? false,
 		}));
-		return Response.json(res);
+		return json(res);
 	} else {
-		return Response.json({ message: "Must have session cookie" }, { status: 401 });
+		return json({ message: "Must have session cookie" }, { status: 401 });
 	}
+}
+
+export async function POST({ request, locals }) {
+	const { message } = await request.json();
+	const sessionId = locals.sessionId || crypto.randomUUID();
+
+	const llmUrl = "http://llama-server:8082";
+	const response = await fetch(`${llmUrl}/v1/chat/completions`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({
+			messages: [{ role: "user", content: message }],
+			model: "microsoft/Phi-3-mini-4k-instruct",
+		}),
+	});
+
+	if (!response.ok) {
+		return json({ error: "Failed to get LLM response" }, { status: 500 });
+	}
+
+	const llmResponse = await response.json();
+	const assistantMessage = llmResponse.choices[0].message.content;
+
+	const conv = {
+		_id: new ObjectId(),
+		sessionId,
+		title: message.substring(0, 50), // Add a title based on the message
+		messages: [
+			{ id: crypto.randomUUID(), from: "user", content: message, createdAt: new Date() },
+			{
+				id: crypto.randomUUID(),
+				from: "assistant",
+				content: assistantMessage,
+				createdAt: new Date(),
+			},
+		],
+		updatedAt: new Date(),
+		model: "microsoft/Phi-3-mini-4k-instruct",
+	};
+	await collections.conversations.insertOne(conv);
+
+	return json({ message: assistantMessage });
 }
 
 export async function DELETE({ locals }) {
@@ -49,6 +93,5 @@ export async function DELETE({ locals }) {
 			...authCondition(locals),
 		});
 	}
-
 	return new Response();
 }
