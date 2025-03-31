@@ -204,7 +204,7 @@
             About & Privacy
         </a>
     {/if}
-	{#if canLogin}
+	{#if !user}
         <button
             type="button"
             onclick={() => loginModalOpen.set(true)}

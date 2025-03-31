@@ -18,18 +18,29 @@
     import LoginModal from "$lib/components/LoginModal.svelte";
     import OverloadedModal from "$lib/components/OverloadedModal.svelte";
     import { isHuggingChat } from "$lib/utils/isHuggingChat";
-	import { redirect } from "@sveltejs/kit";
+    import { browser } from "$app/environment";
 
+    // Define User type to match expected shape from /api/session
+    interface User {
+        id: string;
+        username: string;
+        avatarUrl: string | undefined;
+        email: string | undefined;
+        logoutDisabled: boolean | undefined;
+        isAdmin: boolean;
+        isEarlyAccess: boolean;
+    }
 
     let { data = $bindable(), children } = $props();
 
     // Reactive state for user and conversations
-    let user = $state(data.user); // Client-side user state
-	let canLogin = $state(user === null || user === undefined);
+    let user = $state<User | null | undefined>(data.user); // Explicitly allow null
+    let canLogin = $state(user === null || user === undefined);
     let conversations = $state(data.conversations);
+
     $effect(() => {
         data.conversations && untrack(() => (conversations = data.conversations));
-		canLogin = user === null || user === undefined;
+        canLogin = user === null || user === undefined;
     });
 
     let isNavCollapsed = $state(false);
@@ -37,51 +48,133 @@
     let errorToastTimeout: ReturnType<typeof setTimeout>;
     let currentError: string | undefined = $state();
 
-	let sessionId = null;
+    let sessionId: string | null = null;
 
-    // Sync user data on mount (initial load)
-    onMount(async () => {
-        await syncSession();
+    // LoginModal props
+    let accountname = $state("");
+    let username = $state("");
+    let accountExists: boolean | null = $state(null);
+
+    // Define signIn and checkAccount before use
+    async function signIn() {
+        try {
+            const sessionId = crypto.randomUUID();
+            const response = await fetch(`${base}/api/login?accountname=${accountname}&sessionId=${sessionId}`, {
+                credentials: "include",
+            });
+            if (!response.ok) {
+                throw new Error(`Failed to initiate login: ${response.statusText}`);
+            }
+            const { authUrl } = await response.json();
+            window.location.href = authUrl; // Redirect to Keycloak
+        } catch (err) {
+            console.error("Sign-in failed:", err);
+            $error = "Failed to sign in. Please try again.";
+        }
+    }
+
+    // src/routes/+layout.svelte
+    async function checkAccount() {
+    if (!accountname?.trim()) {
+        accountExists = null;
+        return;
+    }
+
+    try {
+        const kongProxyUrl = envPublic.KONG_PROXY_URL || "http://localhost:8000";
+        const response = await fetch(`${kongProxyUrl}/account-service/check-account?accountname=${encodeURIComponent(accountname)}`);
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`Failed to check account: ${response.status} - ${text}`);
+        }
+        const data = await response.json();
+        accountExists = data.exists;
+    } catch (err) {
+        console.error("Check account failed:", err);
+        $error = err.message || "Failed to check account existence.";
+    }
+}
+
+    // Consolidated onMount
+    onMount(() => {
+        if (browser) {
+            syncSession();
+            sessionId = document.cookie.split("; ").find(row => row.startsWith("session="))?.split("=")[1] || null;
+
+            if ($page.url.searchParams.has("model")) {
+                settings.instantSet({
+                    activeModel: $page.url.searchParams.get("model") ?? $settings.activeModel,
+                }).then(async () => {
+                    const query = new URLSearchParams($page.url.searchParams.toString());
+                    query.delete("model");
+                    await goto(`${base}/?${query.toString()}`, { invalidateAll: true });
+                });
+            }
+
+            if ($page.url.searchParams.has("tools")) {
+                const tools = $page.url.searchParams.get("tools")?.split(",");
+                settings.instantSet({
+                    tools: [...($settings.tools ?? []), ...(tools ?? [])],
+                }).then(async () => {
+                    const query = new URLSearchParams($page.url.searchParams.toString());
+                    query.delete("tools");
+                    await goto(`${base}/?${query.toString()}`, { invalidateAll: true });
+                });
+            }
+        }
+
+        const refreshInterval = setInterval(async () => {
+            if (!browser) return;
+            const response = await fetch("/api/refresh", { method: "POST", credentials: "include" });
+            if (!response.ok) {
+                console.error("Token refresh failed");
+            } else {
+                const { expiresIn } = await response.json();
+                console.log("Token refreshed, expires in:", expiresIn);
+            }
+        }, 15 * 60 * 1000); // Refresh every 15 minutes
+
+        return () => clearInterval(refreshInterval);
     });
 
-    // Sync user data on every navigation change
+    // Sync on navigation change
     $effect(() => {
-        $page.url; // Trigger on route change
-        syncSession();
+        $page.url;
+        if (browser) syncSession();
     });
 
     async function syncSession() {
-		try {
-			const response = await fetch(`${base}/api/session`, { credentials: 'include' });
-			console.log('Session response status:', response.status);
-			if (response.ok) {
-				const { user: userData } = await response.json();
-				user = userData;
-				canLogin = false; // Logged in, no login needed
-				console.log('Client synced user:', user);
-			} else {
-				user = null;
-				canLogin = true; // Not logged in, enable login
-				console.log('No active session, user reset to null, status:', response.status);
-			}
-		} catch (err) {
-			console.error('Error syncing session:', err);
-			user = null;
-			canLogin = true;
-			console.log('Session sync failed, user set to null');
-		}
-	}
+        if (!browser) return;
+        if ($page.url.pathname === `${base}/login`) return; // Avoid redirect loop
+        try {
+            const response = await fetch(`${base}/api/session`, { credentials: "include" });
+            console.log("Session response status:", response.status);
+            if (response.ok) {
+                const { user: userData } = await response.json();
+                user = userData;
+                canLogin = false;
+                console.log("Client synced user:", user);
+            } else {
+                console.log("No active session, redirecting to login, status:", response.status);
+                user = null;
+                canLogin = true;
+                $loginModalOpen = true;                
+            }
+        } catch (err) {
+            console.error("Error syncing session:", err);
+            user = null;
+            canLogin = true;
+            $loginModalOpen = true;
+        }
+    }
 
     async function onError() {
-        // If a new different error comes, wait for the current error to hide first
         if ($error && currentError && $error !== currentError) {
             clearTimeout(errorToastTimeout);
             currentError = undefined;
             await new Promise((resolve) => setTimeout(resolve, 300));
         }
-
         currentError = $error;
-
         if (currentError === "Model is overloaded") {
             overloadedModalOpen = true;
         }
@@ -93,21 +186,16 @@
 
     async function deleteConversation(id: string) {
         try {
-			console.log(base);
+            console.log(base);
             const res = await fetch(`${base}/conversation/${id}`, {
                 method: "DELETE",
-                headers: {
-                    "Content-Type": "application/json",
-                },
+                headers: { "Content-Type": "application/json" },
             });
-
             if (!res.ok) {
                 $error = "Error while deleting conversation, try again.";
                 return;
             }
-
             conversations = conversations.filter((conv) => conv.id !== id);
-
             if ($page.params.id === id) {
                 await goto(`${base}/`, { invalidateAll: true });
             }
@@ -121,17 +209,13 @@
         try {
             const res = await fetch(`${base}/conversation/${id}`, {
                 method: "PATCH",
-                headers: {
-                    "Content-Type": "application/json",
-                },
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ title }),
             });
-
             if (!res.ok) {
                 $error = "Error while editing title, try again.";
                 return;
             }
-
             conversations = conversations.map((conv) => (conv.id === id ? { ...conv, title } : conv));
         } catch (err) {
             console.error(err);
@@ -150,65 +234,14 @@
     $effect(() => {
         if ($titleUpdate) {
             const convIdx = conversations.findIndex(({ id }) => id === $titleUpdate?.convId);
-
-            if (convIdx != -1) {
+            if (convIdx !== -1) {
                 conversations[convIdx].title = $titleUpdate?.title ?? conversations[convIdx].title;
             }
-
             $titleUpdate = null;
         }
     });
 
     const settings = createSettingsStore(data.settings);
-
-    onMount(async () => {
-
-		// Get session ID from cookie or data
-        sessionId = document.cookie.split("; ").find(row => row.startsWith("session="))?.split("=")[1];
-
-        if ($page.url.searchParams.has("model")) {
-            await settings
-                .instantSet({
-                    activeModel: $page.url.searchParams.get("model") ?? $settings.activeModel,
-                })
-                .then(async () => {
-                    const query = new URLSearchParams($page.url.searchParams.toString());
-                    query.delete("model");
-                    await goto(`${base}/?${query.toString()}`, {
-                        invalidateAll: true,
-                    });
-                });
-        }
-
-        if ($page.url.searchParams.has("tools")) {
-            const tools = $page.url.searchParams.get("tools")?.split(",");
-
-            await settings
-                .instantSet({
-                    tools: [...($settings.tools ?? []), ...(tools ?? [])],
-                })
-                .then(async () => {
-                    const query = new URLSearchParams($page.url.searchParams.toString());
-                    query.delete("tools");
-                    await goto(`${base}/?${query.toString()}`, {
-                        invalidateAll: true,
-                    });
-                });
-        }
-
-		const refreshInterval = setInterval(async () => {
-            const response = await fetch("/api/refresh", { method: "POST" });
-            if (!response.ok) {
-                console.error("Token refresh failed");
-                // Optionally redirect to login
-            } else {
-                const { expiresIn } = await response.json();
-                console.log("Token refreshed, expires in:", expiresIn);
-            }
-        }, 15 * 60 * 1000); // Refresh every 15 minutes
-
-        return () => clearInterval(refreshInterval); 
-    });
 
     let mobileNavTitle = $derived(
         ["/models", "/assistants", "/privacy", "/tools"].includes($page.route.id ?? "")
@@ -218,21 +251,18 @@
 
     let showDisclaimer = $derived(
         !$settings.ethicsModalAccepted &&
-            $page.url.pathname !== `${base}/privacy` &&
-            envPublic.PUBLIC_APP_DISCLAIMER === "1" &&
-            !($page.data.shared === true)
+        $page.url.pathname !== `${base}/privacy` &&
+        envPublic.PUBLIC_APP_DISCLAIMER === "1" &&
+        !($page.data.shared === true)
     );
 
-	
-
-	async function handleLogout() {
-		if (!browser) return;
+    async function handleLogout() {
+        if (!browser) return;
 
         try {
-            // Fetch session data to get refresh token
             const sessionResponse = await fetch("/api/session", {
                 method: "GET",
-                credentials: "include", // Include cookies
+                credentials: "include",
             });
 
             if (!sessionResponse.ok) {
@@ -240,81 +270,71 @@
             }
 
             const { refreshToken } = await sessionResponse.json();
-
             const keycloakUrl = "http://localhost:8080/realms/eGov/protocol/openid-connect/logout";
             const clientId = "eGov-client";
-            const redirectUri = `${window.location.origin}${base}/`; // Must match Keycloak config
+            const redirectUri = `${window.location.origin}${base}/`;
 
             const logoutParams = new URLSearchParams({
                 client_id: clientId,
-                refresh_token: refreshToken, // Use refresh token if required
+                refresh_token: refreshToken,
                 post_logout_redirect_uri: redirectUri,
             });
 
             const response = await fetch(`${keycloakUrl}?${logoutParams.toString()}`, {
-                method: "POST", // Keycloak often expects POST for logout with tokens
-                headers: {
-                    "Content-Type": "application/x-www-form-urlencoded",
-                },
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
             });
 
             if (!response.ok) {
                 throw new Error(`Logout failed: ${response.status} ${response.statusText}`);
             }
 
-            // Clear local session
             await fetch("/api/logout", { method: "POST", credentials: "include" });
-            goto(`${base}/login`);
+            user = null;
+            canLogin = true;
+            $loginModalOpen = true; // Show modal instead of redirecting
         } catch (err) {
             console.error("Logout error:", err);
-            // Optionally handle error gracefully
-            goto(`${base}/login`);
+            user = null;
+            canLogin = true;
+            $loginModalOpen = true; // Show modal instead of redirecting
         }
-	}
+    }
 </script>
 
 <svelte:head>
     <title>{envPublic.PUBLIC_APP_NAME}</title>
-    <meta name="description" content="The first open source alternative to ChatGPT. 💪" />
+    <meta name="description" content="Open Source Platform for Public Service Delivery" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:site" content="@huggingface" />
-
-    <!-- use those meta tags everywhere except on the share assistant page -->
-    <!-- feel free to refacto if there's a better way -->
+    <meta name="twitter:site" content="@eGovFoundation" />
     {#if !$page.url.pathname.includes("/assistant/") && $page.route.id !== "/assistants" && !$page.url.pathname.includes("/models/") && !$page.url.pathname.includes("/tools")}
         <meta property="og:title" content={envPublic.PUBLIC_APP_NAME} />
         <meta property="og:type" content="website" />
         <meta property="og:url" content="{envPublic.PUBLIC_ORIGIN || $page.url.origin}{base}" />
         <meta
             property="og:image"
-            content="{envPublic.PUBLIC_ORIGIN ||
-                $page.url.origin}{base}/{envPublic.PUBLIC_APP_ASSETS}/thumbnail.png"
+            content="{envPublic.PUBLIC_ORIGIN || $page.url.origin}{base}/{envPublic.PUBLIC_APP_ASSETS}/thumbnail.png"
         />
         <meta property="og:description" content={envPublic.PUBLIC_APP_DESCRIPTION} />
     {/if}
     <link
         rel="icon"
-        href="{envPublic.PUBLIC_ORIGIN ||
-            $page.url.origin}{base}/{envPublic.PUBLIC_APP_ASSETS}/favicon.ico"
+        href="{envPublic.PUBLIC_ORIGIN || $page.url.origin}{base}/{envPublic.PUBLIC_APP_ASSETS}/favicon.ico"
         sizes="32x32"
     />
     <link
         rel="icon"
-        href="{envPublic.PUBLIC_ORIGIN ||
-            $page.url.origin}{base}/{envPublic.PUBLIC_APP_ASSETS}/icon.svg"
+        href="{envPublic.PUBLIC_ORIGIN || $page.url.origin}{base}/{envPublic.PUBLIC_APP_ASSETS}/icon.svg"
         type="image/svg+xml"
     />
     <link
         rel="apple-touch-icon"
-        href="{envPublic.PUBLIC_ORIGIN ||
-            $page.url.origin}{base}/{envPublic.PUBLIC_APP_ASSETS}/apple-touch-icon.png"
+        href="{envPublic.PUBLIC_ORIGIN || $page.url.origin}{base}/{envPublic.PUBLIC_APP_ASSETS}/apple-touch-icon.png"
     />
     <link
         rel="manifest"
-        href="{envPublic.PUBLIC_ORIGIN ||
-            $page.url.origin}{base}/{envPublic.PUBLIC_APP_ASSETS}/manifest.json"
+        href="{envPublic.PUBLIC_ORIGIN || $page.url.origin}{base}/{envPublic.PUBLIC_APP_ASSETS}/manifest.json"
     />
-
     {#if envPublic.PUBLIC_PLAUSIBLE_SCRIPT_URL && envPublic.PUBLIC_ORIGIN}
         <script
             defer
@@ -322,7 +342,6 @@
             src={envPublic.PUBLIC_PLAUSIBLE_SCRIPT_URL}
         ></script>
     {/if}
-
     {#if envPublic.PUBLIC_APPLE_APP_ID}
         <meta name="apple-itunes-app" content={`app-id=${envPublic.PUBLIC_APPLE_APP_ID}`} />
     {/if}
@@ -334,9 +353,12 @@
 
 {#if $loginModalOpen}
     <LoginModal
-        on:close={() => {
-            $loginModalOpen = false;
-        }}
+        {accountname}
+        {username}
+        {accountExists}
+        {signIn}
+        {checkAccount}
+        events={{ close: () => ($loginModalOpen = false), register: () => console.log("Register clicked") }}
     />
 {/if}
 
@@ -352,39 +374,36 @@
     <ExpandNavigation
         isCollapsed={isNavCollapsed}
         onClick={() => (isNavCollapsed = !isNavCollapsed)}
-        classNames="absolute inset-y-0 z-10 my-auto {!isNavCollapsed
-            ? 'left-[290px]'
-            : 'left-0'} *:transition-transform"
+        classNames="absolute inset-y-0 z-10 my-auto {!isNavCollapsed ? 'left-[290px]' : 'left-0'} *:transition-transform"
     />
-
     <MobileNav title={mobileNavTitle}>
-		<NavMenu
-			{conversations}
-			user={user}
-			canLogin={canLogin}
-			on:logout={() => {
-				handleLogout();
-			}}
-			on:shareConversation={(ev) => shareConversation(ev.detail.id, ev.detail.title)}
-			on:deleteConversation={(ev) => deleteConversation(ev.detail)}
-			on:editConversationTitle={(ev) => editConversationTitle(ev.detail.id, ev.detail.title)}
-		/>
-	</MobileNav>
-	<nav class="grid max-h-screen grid-cols-1 grid-rows-[auto,1fr,auto] overflow-hidden *:w-[290px] max-md:hidden">
-		<NavMenu
-			{conversations}
-			user={user}
-			canLogin={canLogin}
-			on:logout={() => {
-				handleLogout();
-			}}
-			on:shareConversation={(ev) => shareConversation(ev.detail.id, ev.detail.title)}
-			on:deleteConversation={(ev) => deleteConversation(ev.detail)}
-			on:editConversationTitle={(ev) => editConversationTitle(ev.detail.id, ev.detail.title)}
-		/>
-	</nav>
+        <NavMenu
+            {conversations}
+            {user}
+            {canLogin}
+            on:logout={handleLogout}
+            on:shareConversation={(ev) => shareConversation(ev.detail.id, ev.detail.title)}
+            on:deleteConversation={(ev) => deleteConversation(ev.detail)}
+            on:editConversationTitle={(ev) => editConversationTitle(ev.detail.id, ev.detail.title)}
+        />
+    </MobileNav>
+    <nav class="grid max-h-screen grid-cols-1 grid-rows-[auto,1fr,auto] overflow-hidden *:w-[290px] max-md:hidden">
+        <NavMenu
+            {conversations}
+            {user}
+            {canLogin}
+            on:logout={handleLogout}
+            on:shareConversation={(ev) => shareConversation(ev.detail.id, ev.detail.title)}
+            on:deleteConversation={(ev) => deleteConversation(ev.detail)}
+            on:editConversationTitle={(ev) => editConversationTitle(ev.detail.id, ev.detail.title)}
+        />
+    </nav>
     {#if currentError}
         <Toast message={currentError} />
     {/if}
-    {@render children?.()}
+    {#if children}
+        {@render children()}
+    {:else}
+        <p>Loading page...</p>
+    {/if}
 </div>

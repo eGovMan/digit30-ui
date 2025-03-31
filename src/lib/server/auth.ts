@@ -2,10 +2,10 @@ import {
 	Issuer,
 	type BaseClient,
 	type UserinfoResponse,
-	type TokenSet,
 	custom,
+	type ClientAuthMethod,
 } from "openid-client";
-import { addHours, addWeeks } from "date-fns";
+import { addHours } from "date-fns";
 import { env } from "$env/dynamic/private";
 import { sha256 } from "$lib/utils/sha256";
 import { z } from "zod";
@@ -13,6 +13,7 @@ import { dev } from "$app/environment";
 import type { Cookies } from "@sveltejs/kit";
 import { collections } from "$lib/server/database";
 import { logger } from "$lib/server/logger";
+import type { User } from "$lib/types/User";
 
 // Define interfaces for OIDC settings and user info
 export interface OIDCSettings {
@@ -20,10 +21,11 @@ export interface OIDCSettings {
 }
 
 export interface OIDCUserInfo {
-	token: TokenSet;
 	userData: UserinfoResponse;
+	accessToken: string;
+	refreshToken: string;
+	expiresIn: number;
 }
-
 // No hardcoded requirement for user authentication
 export const requiresUser = true;
 
@@ -48,9 +50,23 @@ export function refreshSessionCookie(cookies: Cookies, sessionId: string) {
 	});
 }
 
-export async function findUser(sessionId: string) {
+// export async function findUser(sessionId: string) {
+// 	const session = await collections.sessions.findOne({ sessionId });
+// 	return session ? await collections.users.findOne({ _id: session.userId }) : null;
+// }
+
+export async function findUser(sessionId: string): Promise<User | null> {
 	const session = await collections.sessions.findOne({ sessionId });
-	return session ? await collections.users.findOne({ _id: session.userId }) : null;
+	if (!session) {
+		console.log("No session found for sessionId:", sessionId);
+		return null;
+	}
+
+	const userData = "$set" in session ? session.$set : session;
+	return {
+		...userData,
+		sessionId, // include sessionId explicitly
+	} as User;
 }
 
 export const authCondition = (locals: App.Locals) => {
@@ -91,9 +107,8 @@ async function getOIDCClient(settings: OIDCSettings, accountname: string): Promi
 	}
 	const config = await response.json();
 
-	console.log(config);
+	console.log("OIDC config from account service:", config);
 
-	// Extract OIDC configuration from the account service response
 	const oidcConfig = z
 		.object({
 			authUrl: z.string(),
@@ -106,22 +121,26 @@ async function getOIDCClient(settings: OIDCSettings, accountname: string): Promi
 		})
 		.parse(config.oidc);
 
-	// const issuerUrl = oidcConfig.authUrl.split("?")[0].replace(/\/auth$/, ""); // Extract base URL for discovery
-	// const issuer = await Issuer.discover(issuerUrl);
-
-	// Correct issuer URL for Keycloak discovery
 	const baseUrl = oidcConfig.authUrl.split("/protocol/openid-connect")[0];
 	const issuerUrl = `${baseUrl}/.well-known/openid-configuration`;
 	const issuer = await Issuer.discover(issuerUrl);
 
-	const client_config = {
-		client_id: oidcConfig.clientId,
+	const client_config: {
+		client_id: string;
+		redirect_uris: string[];
+		response_types: string[];
+		[custom.clock_tolerance]: string;
+		id_token_signed_response_alg: string;
+		resource: string;
+		token_endpoint_auth_method: ClientAuthMethod;
+	} = {
+		client_id: env.KEYCLOAK_PUBLIC_CLIENT_ID || oidcConfig.clientId,
 		redirect_uris: [settings.redirectURI],
 		response_types: ["code"],
 		[custom.clock_tolerance]: oidcConfig.tolerance,
-		id_token_signed_response_alg: "RS256", // Explicitly set to RS256
+		id_token_signed_response_alg: "RS256",
 		resource: oidcConfig.resource,
-		token_endpoint_auth_method: "none",
+		token_endpoint_auth_method: "none", // Explicitly typed as ClientAuthMethod
 	};
 
 	return new issuer.Client(client_config);
@@ -184,9 +203,23 @@ export async function getOIDCUserData(
 
 	const client = await getOIDCClient(settings, accountname);
 	const token = await client.callback(settings.redirectURI, { code, iss });
-	const userData = await client.userinfo(token);
 
-	return { token, userData };
+	if (!token.access_token || !token.refresh_token || !token.expires_in) {
+		throw new Error("Missing token properties");
+	}
+
+	console.log("Token Set from Keycloak:", {
+		accessToken: token.access_token,
+		refreshToken: token.refresh_token,
+		expiresIn: token.expires_in,
+	});
+
+	return {
+		userData: await client.userinfo(token),
+		accessToken: token.access_token,
+		refreshToken: token.refresh_token,
+		expiresIn: token.expires_in,
+	};
 }
 
 export async function validateAndParseCsrfToken(

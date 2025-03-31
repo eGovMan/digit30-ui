@@ -1,3 +1,4 @@
+// src/routes/login/callback/+page.server.ts
 import { redirect, error } from "@sveltejs/kit";
 import { getOIDCUserData, validateAndParseCsrfToken } from "$lib/server/auth";
 import { z } from "zod";
@@ -52,7 +53,7 @@ export async function load({ url, locals, cookies, request, getClientAddress }) 
 	if (!validatedToken) {
 		error(403, "Invalid or expired CSRF token");
 	}
-	const accountName = validatedToken.realm; // Extract from state
+	const accountName = validatedToken.realm;
 	console.log("Account name extracted from state:", accountName);
 
 	// Get user data and tokens from Keycloak
@@ -62,6 +63,7 @@ export async function load({ url, locals, cookies, request, getClientAddress }) 
 		iss,
 		request
 	);
+	console.log("Tokens from getOIDCUserData:", { accessToken, refreshToken, expiresIn });
 
 	// Filter by allowed user emails or domains
 	if (allowedUserEmails.length > 0 || allowedUserDomains.length > 0) {
@@ -82,7 +84,13 @@ export async function load({ url, locals, cookies, request, getClientAddress }) 
 		}
 	}
 
-	// Pass accountname along with other data to updateUser
+	console.log("Updating user with:", {
+		sessionId,
+		accountName,
+		accessToken,
+		refreshToken,
+		expiresIn,
+	});
 	await updateUser({
 		userData,
 		locals,
@@ -96,19 +104,17 @@ export async function load({ url, locals, cookies, request, getClientAddress }) 
 		tokenExpiresIn: expiresIn,
 	});
 
-	// Set session cookie
 	cookies.set("session", sessionId, {
 		path: "/",
 		httpOnly: true,
 		secure: !import.meta.env.DEV,
 	});
 
-	// Store refresh token in a separate httpOnly cookie
-	cookies.set("refresh_token", refreshToken, {
+	cookies.set("refresh_token", refreshToken || "", {
 		path: "/",
 		httpOnly: true,
 		secure: !import.meta.env.DEV,
-		maxAge: 30 * 24 * 60 * 60, // 30 days, adjust based on Keycloak config
+		maxAge: 30 * 24 * 60 * 60,
 	});
 
 	cookies.delete("temp_session_id", { path: "/" });
