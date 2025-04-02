@@ -19,7 +19,7 @@ const allowedUserDomains = z
 	.default([])
 	.parse(JSON5.parse(env.ALLOWED_USER_DOMAINS));
 
-export async function load({ url, locals, cookies, request, getClientAddress }) {
+export async function load({ url, locals, cookies, request }) {
 	const { error: errorName, error_description: errorDescription } = z
 		.object({
 			error: z.string().optional(),
@@ -95,13 +95,12 @@ export async function load({ url, locals, cookies, request, getClientAddress }) 
 		userData,
 		locals,
 		cookies,
-		userAgent: request.headers.get("user-agent") ?? undefined,
-		ip: getClientAddress(),
 		sessionId,
 		accountName,
 		refreshToken,
 		accessToken,
 		tokenExpiresIn: expiresIn,
+		clientId: `${accountName}-client`,
 	});
 
 	cookies.set("session", sessionId, {

@@ -101,6 +101,7 @@ export function createAccountSettingsStore(initialValue: Partial<AccountSettings
 	async function saveAccount(accountname: string, kongProxyUrl: string) {
 		if (!browser) return;
 
+		console.log("Saving account config for:", accountname, kongProxyUrl);
 		baseStore.update((s) => ({ ...s, saving: true, saveError: null }));
 
 		try {
@@ -124,10 +125,14 @@ export function createAccountSettingsStore(initialValue: Partial<AccountSettings
 			});
 
 			if (!response.ok) {
-				throw new Error(`Failed to save account details: ${response.statusText}`);
+				const errorText = await response.text();
+				throw new Error(`Failed to save account details: ${response.statusText} - ${errorText}`);
 			}
 
 			const updatedConfig = await response.json();
+			if (!updatedConfig || typeof updatedConfig !== "object") {
+				throw new Error("Invalid response from server");
+			}
 			console.log("Saved account config:", updatedConfig);
 
 			baseStore.update((s) => ({
@@ -146,6 +151,7 @@ export function createAccountSettingsStore(initialValue: Partial<AccountSettings
 				...s,
 				saving: false,
 				saveError: err instanceof Error ? err.message : "Unknown error",
+				successMessage: null,
 			}));
 		}
 	}

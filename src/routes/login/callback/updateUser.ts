@@ -17,6 +17,7 @@ export async function updateUser(params: {
 	refreshToken?: string;
 	accessToken?: string;
 	tokenExpiresIn?: number;
+	clientId?: string;
 }) {
 	const {
 		userData,
@@ -27,6 +28,7 @@ export async function updateUser(params: {
 		refreshToken,
 		accessToken,
 		tokenExpiresIn,
+		clientId,
 	} = params;
 
 	let username: string | undefined;
@@ -109,9 +111,22 @@ export async function updateUser(params: {
 			},
 			"user login"
 		);
+		if (accountName) {
+			cookies.set("account_info", accountName, {
+				path: "/",
+				httpOnly: true,
+				secure: !import.meta.env.DEV,
+				sameSite: "lax",
+				maxAge: 30 * 24 * 60 * 60, // 30 days
+			});
+		}
 	}
 
-	const isAdmin = (env.HF_ORG_ADMIN && orgs?.some((org) => org.sub === env.HF_ORG_ADMIN)) || false;
+	//if username is accountName-admin, set isAdmin to true
+	const isAdmin =
+		username === `${accountName}-admin` ||
+		(env.HF_ORG_ADMIN && orgs?.some((org) => org.sub === env.HF_ORG_ADMIN)) ||
+		false;
 	const isEarlyAccess =
 		(env.HF_ORG_EARLY_ACCESS && orgs?.some((org) => org.sub === env.HF_ORG_EARLY_ACCESS)) || false;
 	if (hfUserId) {
@@ -185,6 +200,7 @@ export async function updateUser(params: {
 				...(isEarlyAccess !== undefined && { isEarlyAccess }),
 				...(accessToken && { accessToken }),
 				...(refreshToken && { refreshToken }),
+				...(clientId && { clientId }),
 				...(tokenExpiresAt && { tokenExpiresAt }),
 				updatedAt: new Date(),
 			},
@@ -235,6 +251,16 @@ export async function updateUser(params: {
 
 	// Refresh session cookie
 	refreshSessionCookie(cookies, sessionId);
+
+	if (refreshToken) {
+		cookies.set("refresh_token", refreshToken, {
+			path: "/",
+			httpOnly: true,
+			secure: !import.meta.env.DEV, // true in prod, false in dev
+			sameSite: "lax", // "lax" is safe for dev; use "none" for cross-site in prod if needed
+			maxAge: 60 * 60 * 24 * 30, // 30 days
+		});
+	}
 
 	logger.info("User and session updated successfully", {
 		sessionId,

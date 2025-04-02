@@ -3,7 +3,7 @@ import { env as envPublic } from "$env/dynamic/public";
 import type { Handle, HandleServerError } from "@sveltejs/kit";
 import { collections } from "$lib/server/database";
 import { base } from "$app/paths";
-import { findUser, refreshSessionCookie, requiresUser } from "$lib/server/auth";
+import { findUser, refreshSessionCookie } from "$lib/server/auth";
 import { ERROR_MESSAGES } from "$lib/stores/errors";
 import { sha256 } from "$lib/utils/sha256";
 import { addWeeks } from "date-fns";
@@ -85,7 +85,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 		request: event.request,
 	});
 
-	// const requiresUser = false;
+	const requiresUser = false;
 
 	function errorResponse(status: number, message: string) {
 		const sendJson =
@@ -142,7 +142,6 @@ export const handle: Handle = async ({ event, resolve }) => {
 			email,
 			createdAt: new Date(),
 			updatedAt: new Date(),
-			hfUserId: email,
 			avatarUrl: "",
 			logoutDisabled: true,
 		};

@@ -135,6 +135,7 @@
 		isContinue?: boolean;
 	}): Promise<void> {
 		try {
+			console.log("Sending message", prompt, messageId, isRetry, isContinue);
 			$isAborted = false;
 			loading = true;
 			pending = true;

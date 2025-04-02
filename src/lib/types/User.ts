@@ -3,7 +3,6 @@ import type { Timestamps } from "./Timestamps";
 
 export interface User extends Timestamps {
 	_id: ObjectId;
-	hfUserId: string; // Keycloak sub
 	username: string;
 	name: string;
 	email?: string;
@@ -14,4 +13,5 @@ export interface User extends Timestamps {
 	avatarUrl?: string;
 	isAdmin: boolean;
 	isEarlyAccess: boolean;
+	clientId?: string;
 }

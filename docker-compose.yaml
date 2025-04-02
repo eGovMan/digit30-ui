@@ -31,7 +31,7 @@ services:
       COOKIE_SAMESITE: lax
       COOKIE_SECURE: false
       MODELS: |
-        [{"name": "microsoft/Phi-3-mini-4k-instruct",
+        [{"name": "Qwen/Qwen2-7B-Instruct-GGUF",
           "endpoints": [{"type": "llamacpp",
                          "baseURL": "http://llama-server:8080"}]}]
       TEXT_EMBEDDING_MODELS: |
@@ -91,7 +91,7 @@ services:
     command:
       - llama-server
       - --hf-repo
-      - microsoft/Phi-3-mini-4k-instruct-gguf
+      - Qwen/Qwen2-7B-Instruct-GGUF
       - --hf-file
       - Phi-3-mini-4k-instruct-q4.gguf
       - -c

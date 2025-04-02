@@ -55,7 +55,7 @@ export async function POST({ request, locals }) {
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({
 			messages: [{ role: "user", content: message }],
-			model: "microsoft/Phi-3-mini-4k-instruct",
+			model: "Qwen/Qwen2-7B-Instruct-GGUF",
 		}),
 	});
 
@@ -80,7 +80,7 @@ export async function POST({ request, locals }) {
 			},
 		],
 		updatedAt: new Date(),
-		model: "microsoft/Phi-3-mini-4k-instruct",
+		model: "Qwen/Qwen2-7B-Instruct-GGUF",
 	};
 	await collections.conversations.insertOne(conv);
 

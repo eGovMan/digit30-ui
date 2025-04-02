@@ -13,6 +13,7 @@ export async function GET({ url, cookies }) {
 	const redirectURI = "http://localhost:5173/login/callback"; // Match Vite dev server port
 
 	try {
+		console.log("Generating auth URL for account:", accountname);
 		const authUrl = await getOIDCAuthorizationUrl({ redirectURI }, { sessionId, accountname });
 		cookies.set("temp_session_id", sessionId, {
 			path: "/",

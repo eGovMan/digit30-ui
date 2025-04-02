@@ -166,11 +166,15 @@
                     model = data.models[0].id;
                 }
             }
+
+            console.log($settings);
+            
             const res = await fetch(`${base}/conversation`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
+                credentials: 'include', 
                 body: JSON.stringify({
                     model,
                     preprompt: $settings.customPrompts[$settings.activeModel],

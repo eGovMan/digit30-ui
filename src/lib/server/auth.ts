@@ -42,12 +42,13 @@ const secure = z
 	.parse(env.COOKIE_SECURE === "" ? undefined : env.COOKIE_SECURE === "true");
 
 export function refreshSessionCookie(cookies: Cookies, sessionId: string) {
-	cookies.set(env.COOKIE_NAME || "hf-chat", sessionId, {
+	cookies.set(env.COOKIE_NAME || "session", sessionId, {
 		path: "/",
 		sameSite,
 		secure,
 		httpOnly: true,
 		expires: addWeeks(new Date(), 2),
+		maxAge: 60 * 60 * 24 * 14,
 	});
 }
 
@@ -165,7 +166,6 @@ export async function getOIDCAuthorizationUrl(
 		throw new Error(`Failed to fetch config for ${params.accountname}`);
 	}
 	const config = await response.json();
-	console.log(config);
 	const oidcConfig = z.object({ scopes: z.string() }).parse(config.oidc);
 
 	return client.authorizationUrl({

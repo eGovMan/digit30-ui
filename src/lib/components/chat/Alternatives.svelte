@@ -54,7 +54,7 @@
 			class="hidden group-hover/navbranch:block"
 			onclick={() => {
 				if (confirm("Are you sure you want to delete this branch?")) {
-					fetch(`${base}/api/conversation/${page.params.id}/message/${message.id}`, {
+					fetch(`${base}/api/conversations/${page.params.id}/message/${message.id}`, {
 						method: "DELETE",
 					}).then(async (r) => {
 						if (r.ok) {

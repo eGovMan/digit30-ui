@@ -14,15 +14,32 @@
     import { CONV_NUM_PER_PAGE } from "$lib/constants/pagination";
     import { loginModalOpen } from "$lib/stores/loginModal";
     import { createEventDispatcher } from "svelte";
+    import { onMount } from "svelte";
+    
+    onMount(async () => {
+      if (!user || !user.email) {
+        try {
+          const res = await fetch("/api/session", { credentials: "include" });
+          if (res.ok) {
+            const session = await res.json();
+            if (!session.authenticated) {
+              user = null;
+            }
+          } else {
+            user = null;
+          }
+        } catch {
+          user = null;
+        }
+      }
+    });
 
-    interface Props {
-        conversations: ConvSidebar[];
-        canLogin: boolean;
-        user: LayoutData["user"];
-        p?: number;
-    }
-
-    let { conversations = $bindable(), canLogin, user, p = $bindable(0) }: Props = $props();
+    let { conversations = [], canLogin, user, p = 0 }: {
+      conversations: ConvSidebar[];
+      canLogin: boolean;
+      user: LayoutData["user"];
+      p: number;
+    } = $props();
 
     let hasMore = $state(true);
 
@@ -93,58 +110,61 @@
     });
 </script>
 
-<div
-    class="sticky top-0 flex flex-none touch-none items-center justify-between px-1.5 py-3.5 max-sm:pt-0"
->
-    <a
-        class="flex items-center rounded-xl text-lg font-semibold"
-        href="{envPublic.PUBLIC_ORIGIN}{base}/"
+    <div
+        class="sticky top-0 flex flex-none touch-none items-center justify-between px-1.5 py-3.5 max-sm:pt-0"
     >
-        <Logo classNames="mr-1" />
-        {envPublic.PUBLIC_APP_NAME}
-    </a>
-    {#if $page.url.pathname !== base + "/"}
         <a
-            href={`${base}/`}
-            onclick={handleNewChatClick}
-            class="flex rounded-lg border bg-white px-2 py-0.5 text-center shadow-sm hover:shadow-none dark:border-gray-600 dark:bg-gray-700 sm:text-smd"
+            class="flex items-center rounded-xl text-lg font-semibold"
+            href="{envPublic.PUBLIC_ORIGIN}{base}/"
         >
-            New Chat
+            <Logo classNames="mr-1" />
+            {envPublic.PUBLIC_APP_NAME}
         </a>
-    {/if}
-</div>
-<div
-    class="scrollbar-custom flex touch-pan-y flex-col gap-1 overflow-y-auto rounded-r-xl from-gray-50 px-3 pb-3 pt-2 text-[.9rem] dark:from-gray-800/30 max-sm:bg-gradient-to-t md:bg-gradient-to-l"
->
-    {#await groupedConversations}
-        {#if $page.data.nConversations > 0}
-            <div class="overflow-y-hidden">
-                <div class="flex animate-pulse flex-col gap-4">
-                    <div class="h-4 w-24 rounded bg-gray-200 dark:bg-gray-700"></div>
-                    {#each Array(100) as _}
-                        <div class="ml-2 h-5 w-4/5 gap-5 rounded bg-gray-200 dark:bg-gray-700"></div>
+        {#if $page.url.pathname !== base + "/"}
+            <a
+                href={`${base}/`}
+                onclick={handleNewChatClick}
+                class="flex rounded-lg border bg-white px-2 py-0.5 text-center shadow-sm hover:shadow-none dark:border-gray-600 dark:bg-gray-700 sm:text-smd"
+            >
+                New Chat
+            </a>
+        {/if}
+    </div>
+
+    <div
+        class="scrollbar-custom flex touch-pan-y flex-col gap-1 overflow-y-auto rounded-r-xl from-gray-50 px-3 pb-3 pt-2 text-[.9rem] dark:from-gray-800/30 max-sm:bg-gradient-to-t md:bg-gradient-to-l"
+    >
+        {#if user}
+            {#await groupedConversations}
+                {#if $page.data.nConversations > 0}
+                    <div class="overflow-y-hidden">
+                        <div class="flex animate-pulse flex-col gap-4">
+                            <div class="h-4 w-24 rounded bg-gray-200 dark:bg-gray-700"></div>
+                            {#each Array(100) as _}
+                                <div class="ml-2 h-5 w-4/5 gap-5 rounded bg-gray-200 dark:bg-gray-700"></div>
+                            {/each}
+                        </div>
+                    </div>
+                {/if}
+            {:then groupedConversations}
+                <div class="flex flex-col gap-1">
+                    {#each Object.entries(groupedConversations) as [group, convs]}
+                        {#if convs.length}
+                            <h4 class="mb-1.5 mt-4 pl-0.5 text-sm text-gray-400 first:mt-0 dark:text-gray-500">
+                                {titles[group]}
+                            </h4>
+                            {#each convs as conv}
+                                <NavConversationItem on:editConversationTitle on:deleteConversation {conv} />
+                            {/each}
+                        {/if}
                     {/each}
                 </div>
-            </div>
-        {/if}
-    {:then groupedConversations}
-        <div class="flex flex-col gap-1">
-            {#each Object.entries(groupedConversations) as [group, convs]}
-                {#if convs.length}
-                    <h4 class="mb-1.5 mt-4 pl-0.5 text-sm text-gray-400 first:mt-0 dark:text-gray-500">
-                        {titles[group]}
-                    </h4>
-                    {#each convs as conv}
-                        <NavConversationItem on:editConversationTitle on:deleteConversation {conv} />
-                    {/each}
+                {#if hasMore}
+                    <InfiniteScroll on:visible={handleVisible} />
                 {/if}
-            {/each}
-        </div>
-        {#if hasMore}
-            <InfiniteScroll on:visible={handleVisible} />
+            {/await}
         {/if}
-    {/await}
-</div>
+    </div>
 <div
     class="mt-0.5 flex touch-none flex-col gap-1 rounded-r-xl p-3 text-sm md:bg-gradient-to-l md:from-gray-50 md:dark:from-gray-800/30"
 >
@@ -190,12 +210,14 @@
             </span>
         </a>
     {/if}
+    {#if user}
     <a
         href="{base}/settings"
         class="flex h-9 flex-none items-center gap-1.5 rounded-lg pl-2.5 pr-2 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
     >
         Settings
     </a>
+    {/if}
     {#if envPublic.PUBLIC_APP_NAME === "HuggingChat"}
         <a
             href="{base}/privacy"

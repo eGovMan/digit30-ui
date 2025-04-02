@@ -16,8 +16,15 @@ export async function POST({ cookies, locals }) {
 	}
 
 	const keycloakUrl = env.KEYCLOAK_URL || "http://localhost:8080";
-	const clientId = env.KEYCLOAK_PUBLIC_CLIENT_ID || "eGov-client";
-	const clientSecret = env.KEYCLOAK_SERVER_CLIENT_SECRET || "";
+	let accountName = locals?.user?.accountName;
+	if (!accountName) {
+		accountName = cookies.get("account_info");
+		if (!accountName) {
+			console.error("Missing accountName in session and cookie");
+			return json({ error: "Missing accountName for client ID" }, { status: 500 });
+		}
+	}
+	const clientId = `${accountName}-client`;
 
 	const response = await fetch(`${keycloakUrl}/protocol/openid-connect/token`, {
 		method: "POST",
@@ -28,14 +35,14 @@ export async function POST({ cookies, locals }) {
 			grant_type: "refresh_token",
 			refresh_token: refreshToken,
 			client_id: clientId,
-			client_secret: clientSecret,
 		}),
 	});
 
 	if (!response.ok) {
 		cookies.delete("session", { path: "/" });
 		cookies.delete("refresh_token", { path: "/" });
-		console.log("Refresh failed, clearing session");
+		const errorText = await response.text();
+		console.error("❌ Refresh failed with response:", errorText);
 		return json({ error: "Failed to refresh token" }, { status: 401 });
 	}
 
@@ -48,6 +55,7 @@ export async function POST({ cookies, locals }) {
 		accessToken: access_token,
 		refreshToken: refresh_token,
 		tokenExpiresIn: expires_in,
+		clientId,
 	});
 
 	cookies.set("refresh_token", refresh_token, {

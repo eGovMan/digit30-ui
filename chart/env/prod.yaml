@@ -397,7 +397,7 @@ envVars:
         ]
       },
       {
-        "name": "microsoft/Phi-3.5-mini-instruct",
+        "name": "mQwen/Qwen2-7B-Instruct-GGUF",
         "description": "One of the best small models (3.8B parameters), super fast for simple tasks.",
         "logoUrl": "https://huggingface.co/datasets/huggingchat/models-logo/resolve/main/microsoft-logo.png",
         "modelUrl": "https://huggingface.co/microsoft/Phi-3.5-mini-instruct",

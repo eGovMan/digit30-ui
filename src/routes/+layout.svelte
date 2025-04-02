@@ -57,6 +57,11 @@
 
     // Define signIn and checkAccount before use
     async function signIn() {
+        if (!accountname?.trim()) {
+            $error = "Please enter an account name to log in.";
+            return;
+        }
+
         try {
             const sessionId = crypto.randomUUID();
             const response = await fetch(`${base}/api/login?accountname=${accountname}&sessionId=${sessionId}`, {
@@ -132,7 +137,7 @@
                 const { expiresIn } = await response.json();
                 console.log("Token refreshed, expires in:", expiresIn);
             }
-        }, 15 * 60 * 1000); // Refresh every 15 minutes
+        }, 60 * 1000); // Refresh every 15 minutes
 
         return () => clearInterval(refreshInterval);
     });
@@ -158,13 +163,25 @@
                 console.log("No active session, redirecting to login, status:", response.status);
                 user = null;
                 canLogin = true;
-                $loginModalOpen = true;                
+                if (document.cookie.includes("logout_status=1")) {
+                    document.cookie = "logout_status=; path=/; max-age=0";
+                    $error = "You have been logged out.";
+                    console.log("✅ User has logged out");
+                } else {
+                    $loginModalOpen = true;
+                }
             }
-        } catch (err) {
-            console.error("Error syncing session:", err);
-            user = null;
-            canLogin = true;
-            $loginModalOpen = true;
+            } catch (err) {
+                console.error("Error syncing session:", err);
+                user = null;
+                canLogin = true;
+                if (document.cookie.includes("logout_status=1")) {
+                    document.cookie = "logout_status=; path=/; max-age=0";
+                    $error = "You have been logged out.";
+                    console.log("✅ User has logged out");
+                } else {
+                    $loginModalOpen = true;
+                }
         }
     }
 
@@ -257,51 +274,19 @@
     );
 
     async function handleLogout() {
-        if (!browser) return;
+	console.log("Logout clicked");
+	if (!browser) return;
 
-        try {
-            const sessionResponse = await fetch("/api/session", {
-                method: "GET",
-                credentials: "include",
-            });
-
-            if (!sessionResponse.ok) {
-                throw new Error("Failed to fetch session data");
-            }
-
-            const { refreshToken } = await sessionResponse.json();
-            const keycloakUrl = "http://localhost:8080/realms/eGov/protocol/openid-connect/logout";
-            const clientId = "eGov-client";
-            const redirectUri = `${window.location.origin}${base}/`;
-
-            const logoutParams = new URLSearchParams({
-                client_id: clientId,
-                refresh_token: refreshToken,
-                post_logout_redirect_uri: redirectUri
-            });
-
-            // const response = await fetch(`${keycloakUrl}?${logoutParams.toString()}`, {
-            //     method: "POST",
-            //     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            // });
-            const logoutUrl = `${keycloakUrl}?${logoutParams.toString()}`;
-            window.location.href = logoutUrl;
-
-            // if (!response.ok) {
-            //     throw new Error(`Logout failed: ${response.status} ${response.statusText}`);
-            // }
-
-            await fetch("/api/logout", { method: "POST", credentials: "include" });
-            user = null;
-            canLogin = true;
-            // $loginModalOpen = true; // Show modal instead of redirecting
-        } catch (err) {
-            console.error("Logout error:", err);
-            user = null;
-            canLogin = true;
-            $loginModalOpen = true; // Show modal instead of redirecting
-        }
-    }
+	try {
+		// Just call the server endpoint, let it redirect
+		window.location.href = "/logout";
+	} catch (err) {
+		console.error("Logout error:", err);
+		user = null;
+		canLogin = true;
+		$loginModalOpen = true;
+	}
+}
 </script>
 
 <svelte:head>
